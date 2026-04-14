@@ -1,0 +1,84 @@
+id: inspect-dashboard-queries
+category: grafana_api
+tags:
+- grafana
+- dashboards
+- api
+- panels
+- queries
+setup_dashboards:
+- uid: svc-overview
+  title: Service Overview
+  panels:
+  - id: 1
+    title: Request Rate
+    type: timeseries
+    gridPos:
+      h: 8
+      w: 12
+      x: 0
+      y: 0
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: rate(http_requests_total[5m])
+      refId: A
+  - id: 2
+    title: Error Rate
+    type: stat
+    gridPos:
+      h: 8
+      w: 12
+      x: 12
+      y: 0
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))
+      refId: A
+  - id: 3
+    title: P95 Latency
+    type: timeseries
+    gridPos:
+      h: 8
+      w: 24
+      x: 0
+      y: 8
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
+      refId: A
+statement: |
+  Someone sent me our "Service Overview" dashboard (`svc-overview`). What is each panel
+  actually querying in Grafana right now - the expressions as saved, not what we think they should be.
+checks:
+- weight: 35
+  type: state
+  params:
+    uid: svc-overview
+    mode: dashboard_state
+    panel_count: 3
+    panels:
+    - title: Request Rate
+      type: timeseries
+      datasource_type: prometheus
+    - title: Error Rate
+      type: stat
+      datasource_type: prometheus
+    - title: P95 Latency
+      type: timeseries
+      datasource_type: prometheus
+  name: Service Overview exists with the expected saved panel/query structure
+rubric:
+- criterion: The final response accurately reports the saved Service Overview queries rather than guessed PromQL
+  weight: 50.0
+  fact:
+    kind: resource
+    resource: dashboard
+    uid: svc-overview
+- criterion: The response organizes the saved queries clearly enough that an on-call reader can tell which panel each query belongs to
+  weight: 15.0

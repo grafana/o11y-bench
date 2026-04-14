@@ -1,0 +1,34 @@
+id: check-service-health
+category: prometheus_query
+tags:
+- promql
+- metrics
+- health
+- up
+statement: |
+  Quick health check - but don't stop at scrape status. Tell me whether our monitored targets are
+  up right now, and whether backend traffic still looks healthy over the last 6 hours. Name any
+  backend jobs that still show HTTP 5xx in that 6h view in worst-to-better order and give the
+  rough worst backend 5xx share.
+checks: []
+rubric:
+- criterion: The final response accurately reflects that all monitored targets are up right now.
+  weight: 35
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum(up)
+- criterion: The final response states Worst backend 5xx share accurately.
+  weight: 20
+  fact:
+    kind: query
+    backend: prometheus
+    query: max((sum by (job) (rate(http_requests_total{status=~"5..",job=~"user-service|order-service|payment-service"}[6h]))) / (sum by (job) (rate(http_requests_total{job=~"user-service|order-service|payment-service"}[6h]))))
+- criterion: The transcript shows Prometheus evidence for both current scrape health and backend 6h HTTP 5xx activity rather than only one side of the check
+  weight: 20
+- criterion: The final response identifies which monitored targets are up and names the backend jobs that still show 6h HTTP 5xx activity in worst-to-better order, consistent with the transcript's Prometheus evidence
+  weight: 30
+- criterion: The final response distinguishes scrape health from application health instead of treating up targets as sufficient proof that the backend fleet is healthy
+  weight: 10
+- criterion: The final response says whether things look truly healthy or not after factoring in both target status and backend 5xx evidence
+  weight: 10

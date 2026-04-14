@@ -1,0 +1,25 @@
+Based on the transcript above, evaluate whether each of the following criteria is satisfied.
+
+<criteria>
+{criteria_text}
+</criteria>
+
+For each criterion, provide your evaluation in the following format:
+<evaluation id="[criterion_id]">
+<answer>YES</answer> or <answer>NO</answer>
+<explanation>One sentence explaining your reasoning.</explanation>
+</evaluation>
+
+Important:
+- You MUST evaluate ALL criteria listed above
+- For each criterion, include either YES or NO in the <answer> tags
+- You MUST include your reasoning in the <explanation> tags
+- The criterion is satisfied only if there is clear evidence in the transcript
+- **The final response** means ONLY the agent's last message that contains user-facing text (not tool calls). Tool results, tool arguments, and thinking blocks are NOT part of the final response. If there is no such message, any criterion that refers to the final response MUST be NO. If a criterion says **the response**, treat it as **the final response** here.
+- **The transcript** is the full conversation, including tool calls and tool results. Use it when a criterion explicitly refers to the transcript or to tool output.
+- If a criterion includes a **Source of truth** line, treat it as canonical evidence for that criterion. For criteria about the final response, judge whether the response faithfully communicates that source of truth without contradiction or invention. Do not require exact wording, exact formatting, or any specific tool usage.
+- When the source of truth includes numeric values, accept equivalent formatting, rounding, and straightforward unit or representation changes when they preserve the same fact. Examples: `0.9s` vs `900ms`, `5.6%` vs `0.056` when the response clearly frames it as a share or ratio.
+- Each criterion targets one clear expectation. If a criterion lists alternatives (a), (b), (c), answer YES when **any one** is clearly satisfied unless it explicitly requires **all**.
+- Answer YES when the criterion’s **intent** is clearly met with **synonymous wording** or paraphrase (for example “dependency” vs “downstream call”), unless the rubric text explicitly demands specific jargon or exact phrases.
+- If uncertain or unclear, answer NO
+- Make sure to include the correct id attribute for each evaluation

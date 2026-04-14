@@ -1,0 +1,31 @@
+id: traceql-tail-latency-bottleneck
+category: tempo_query
+tags:
+- traceql
+- latency
+- tail
+- bottleneck
+statement: |
+  Order flow sometimes spikes into ugly tail latency. Show me a concrete slow example: where
+  does the time go, and which downstream piece looks like the bottleneck? Please include the
+  trace id for the slow example if you find one.
+checks:
+- weight: 45
+  type: grounding
+  params:
+    prefix_min_chars: 8
+    mode: tool_trace_id
+  name: Response cites a trace ID that appears in Tempo tool results
+rubric:
+- criterion: The final response identifies the main downstream bottleneck from the cited slow trace rather than stopping at only top-level slowness.
+  weight: 15
+- criterion: The final response cites span durations from a specific slow trace in the transcript
+  weight: 15.0
+- criterion: The final response frames the issue as tail or high-percentile latency, not only average slowness
+  weight: 5.0
+- criterion: The final response frames tail/high-percentile latency or structural trace analysis (operators, spans, or plain-language equivalent)
+  weight: 25.0
+- criterion: The final response discusses latency or duration with concrete timing wording
+  weight: 30.0
+- criterion: The final response's bottleneck explanation is supported by the cited slow trace rather than generic latency talk
+  weight: 10.0

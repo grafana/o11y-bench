@@ -1,0 +1,29 @@
+id: list-services-traces
+category: tempo_query
+tags:
+- traces
+- tempo
+- services
+statement: |
+  Over roughly the last day of data in the environment, which services actually have tracing coverage - who shows up?
+  Split them into edge layers versus backend services, and don't forget any of the traced services.
+checks:
+- weight: 60
+  type: state
+  params:
+    mode: tempo_trace_service_inventory
+    lookback_hours: 24
+    services_all:
+    - webapp
+    - api-gateway
+    - order-service
+    - payment-service
+    - user-service
+  name: Tempo service inventory over roughly the last day shows trace coverage for the expected service inventory
+rubric:
+- criterion: 'The final response names all traced services in the bench fleet: webapp, api-gateway, order-service, payment-service, and user-service'
+  weight: 20.0
+- criterion: The response is readable and structured for a quick on-call handoff and separates edge layers from backend services
+  weight: 10.0
+- criterion: The final response separates webapp and api-gateway from the backend services instead of presenting one flat undifferentiated list
+  weight: 10.0

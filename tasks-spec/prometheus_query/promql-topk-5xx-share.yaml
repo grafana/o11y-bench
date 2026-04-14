@@ -1,0 +1,25 @@
+id: promql-topk-5xx-share
+category: prometheus_query
+tags:
+- promql
+- topk
+- errors
+- aggregation
+- ranking
+statement: |
+  Over the last 24 hours, which backend service contributed the largest share of all backend
+  5xx responses? Report the service and its share of backend 5xx traffic.
+
+  **Share** here is that service's portion of **every** backend 5xx counted in the same rolling
+  24h window (one number that divides the top contributor by the window total).
+rubric:
+- criterion: The final response states Order-service 5xx share accurately.
+  weight: 45
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum(increase(http_requests_total{job="order-service",status=~"5.."}[24h])) / sum(increase(http_requests_total{status=~"5.."}[24h]))
+- criterion: The response identifies order-service
+  weight: 20.0
+- criterion: The final response expresses the 5xx share as a percent, ratio, or explicit fraction of traffic
+  weight: 20.0

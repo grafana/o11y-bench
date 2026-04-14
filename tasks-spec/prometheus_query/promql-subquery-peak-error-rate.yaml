@@ -1,0 +1,21 @@
+id: promql-subquery-peak-error-rate
+category: prometheus_query
+tags:
+- promql
+- subquery
+- rate
+- aggregation-over-time
+statement: |
+  What was the worst HTTP error rate (5xx share) order-service hit over the last 6 hours? I'm
+  trying to catch the spike in that window, not only what it looks like at this moment.
+rubric:
+- criterion: The final response states Peak order-service 5xx share subquery accurately.
+  weight: 55
+  fact:
+    kind: query
+    backend: prometheus
+    query: max_over_time((sum(rate(http_requests_total{job="order-service",status=~"5.."}[5m])) / sum(rate(http_requests_total{job="order-service"}[5m])))[6h:1m])
+- criterion: The final response frames the reported error rate as a maximum or worst value over a time range, not as a single current reading without that framing
+  weight: 15.0
+- criterion: The final response uses wording about a peak, maximum, window, or subquery over time
+  weight: 20.0

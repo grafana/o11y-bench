@@ -1,0 +1,31 @@
+id: promql-cache-refresh-lag-peak
+category: prometheus_query
+tags:
+- promql
+- metrics
+- cache
+- lag
+- user-service
+statement: |
+  We had an earlier user-service cache-refresh issue and I want the metric summary, not a general RCA.
+  From Prometheus, tell me how high the user-service cache refresh lag got over roughly the last 12
+  hours, what the lag is now at the end of the window, and whether that means the incident is still
+  active or has recovered.
+checks: []
+rubric:
+- criterion: The final response states Peak cache refresh lag accurately.
+  weight: 45
+  fact:
+    kind: query
+    backend: prometheus
+    query: max_over_time(service_cache_refresh_lag_seconds{job="user-service"}[12h])
+- criterion: The final response states Current cache refresh lag accurately.
+  weight: 35
+  fact:
+    kind: query
+    backend: prometheus
+    query: service_cache_refresh_lag_seconds{job="user-service"}
+- criterion: The final response names `user-service` and states that the cache-refresh incident has recovered or is no longer actively lagging if the current lag is back near zero
+  weight: 10
+- criterion: The final response clearly distinguishes the peak lag during the incident from the current lag now instead of collapsing them into one number
+  weight: 10

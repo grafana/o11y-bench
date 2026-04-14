@@ -1,0 +1,24 @@
+id: logql-unwrap-orders-p95-latency
+category: loki_query
+tags:
+- logql
+- unwrap
+- quantile
+- latency
+- json
+statement: |
+  What's the p95 latency (milliseconds) for POST /api/orders over the last six hours? Work from
+  the order-service request logs (JSON lines with `duration_ms`) and give one overall p95 for that
+  window.
+checks: []
+rubric:
+- criterion: The final response states p95-style duration accurately.
+  weight: 55
+  fact:
+    kind: query
+    backend: loki
+    query: quantile_over_time(0.95, {job="order-service"} | json | method="POST" | path="/api/orders" | unwrap duration_ms | __error__="" [6h]) by ()
+- criterion: The response discusses order-service latency
+  weight: 25.0
+- criterion: The response includes numeric latency evidence
+  weight: 20.0

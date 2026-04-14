@@ -1,0 +1,26 @@
+id: query-memory-usage
+category: prometheus_query
+tags:
+- promql
+- metrics
+- memory
+statement: |
+  Same slowdown window: is memory pressure a convincing lead? Over roughly the last 6 hours,
+  give the average overall resident-memory footprint, rank the three heaviest jobs from biggest
+  to smallest, and say whether memory looks like a strong lead or a weak one.
+checks: []
+rubric:
+- criterion: The final response states Average total resident memory roughly accurately.
+  weight: 40
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum(avg_over_time(process_resident_memory_bytes{job=~".+"}[6h]))
+- criterion: The transcript shows Prometheus evidence for both the fleet-wide memory footprint and the per-job ranking over roughly the same 6h window
+  weight: 15.0
+- criterion: The response provides a clear summary of memory usage with appropriate units (bytes, MB, GB)
+  weight: 5.0
+- criterion: The final response ranks the three heaviest jobs from biggest to smallest in a way that is consistent with the transcript's Prometheus evidence
+  weight: 25.0
+- criterion: The final response interprets whether memory looks like a strong incident lead or a weak one, not only the raw footprint
+  weight: 20.0

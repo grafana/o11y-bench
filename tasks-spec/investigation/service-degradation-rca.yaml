@@ -1,0 +1,24 @@
+id: service-degradation-rca
+category: investigation
+tags:
+- rca
+- metrics
+- logs
+- traces
+- order-service
+statement: |
+  Checkout felt sluggish about six hours ago - customers noticed. What slowed down, why, and
+  which piece of the stack was the main bottleneck? Summarize what backs your conclusion, and
+  include a representative trace id if you find one.
+checks: []
+rubric:
+- criterion: The final response characterizes the slowdown as a severe multi-second issue in a way that is consistent with the incident telemetry.
+  weight: 30
+- criterion: The final response summarizes what metrics showed, what logs showed, and what traces added (including stating if traces were inconclusive)
+  weight: 15.0
+- criterion: The final response names one primary bottleneck and explains how symptoms in other services or layers connect to that bottleneck
+  weight: 15.0
+- criterion: The response names impacted services
+  weight: 25.0
+- criterion: The transcript shows at least two distinct observability pulls (metrics, logs, or trace fetches) before the final answer states a root cause
+  weight: 15.0

@@ -1,0 +1,138 @@
+id: dashboard-add-retry-backlog-panels
+category: dashboarding
+tags:
+- dashboard
+- grafana
+- update
+- prometheus
+- queue
+- backlog
+setup_dashboards:
+- uid: service-overview
+  title: Service Overview
+  panels:
+  - id: 1
+    title: Request Rate
+    type: timeseries
+    gridPos:
+      h: 8
+      w: 12
+      x: 0
+      y: 0
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: rate(http_requests_total[5m])
+      refId: A
+  - id: 2
+    title: Error Rate
+    type: stat
+    gridPos:
+      h: 8
+      w: 12
+      x: 12
+      y: 0
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))
+      refId: A
+  - id: 3
+    title: P95 Latency
+    type: timeseries
+    gridPos:
+      h: 8
+      w: 24
+      x: 0
+      y: 8
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
+      refId: A
+statement: |
+  Could you update the saved "Service Overview" dashboard (`service-overview`) so on-call can see
+  retry pile-up directly during incidents? Add a timeseries panel titled exactly "Retry Backlog"
+  that compares payment-service against order-service backlog depth over time, a stat panel titled
+  exactly "Peak Payment Retry Backlog" that surfaces the payment-service peak over the dashboard
+  time range, and a second stat panel titled exactly "Order Spillover Share" that shows roughly how
+  large the order-service peak backlog was relative to the payment-service peak. Keep the existing
+  panels in place.
+checks:
+- weight: 40
+  type: state
+  params:
+    uid: service-overview
+    mode: dashboard_state
+    panel_count: 6
+    panels:
+    - title: Request Rate
+      type: timeseries
+      datasource_type: prometheus
+    - title: Error Rate
+      type: stat
+      datasource_type: prometheus
+    - title: P95 Latency
+      type: timeseries
+      datasource_type: prometheus
+    - title: Retry Backlog
+      type: timeseries
+      datasource_type: prometheus
+    - title: Peak Payment Retry Backlog
+      type: stat
+      datasource_type: prometheus
+    - title: Order Spillover Share
+      type: stat
+      datasource_type: prometheus
+  name: Service Overview keeps the original seeded panels and adds the requested retry backlog panels
+- weight: 35
+  type: state
+  params:
+    uid: service-overview
+    mode: dashboard_state
+    panels:
+    - title: Retry Backlog
+      type: timeseries
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_vector
+        canonical_query: service_retry_queue_depth{job=~"payment-service|order-service"}
+        distinct_label_values:
+        - name: job
+          values_exact:
+          - payment-service
+          - order-service
+  name: The Retry Backlog panel compares payment-service and order-service backlog depth over time using the saved backlog metric
+- weight: 10
+  type: state
+  params:
+    uid: service-overview
+    mode: dashboard_state
+    panels:
+    - title: Peak Payment Retry Backlog
+      type: stat
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_scalar
+        canonical_query: max_over_time(service_retry_queue_depth{job="payment-service"}[$__range])
+  name: The Peak Payment Retry Backlog panel uses the payment-service backlog metric over the dashboard time range
+- weight: 15
+  type: state
+  params:
+    uid: service-overview
+    mode: dashboard_state
+    panels:
+    - title: Order Spillover Share
+      type: stat
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_vector
+        canonical_query: max_over_time(service_retry_queue_depth{job="order-service"}[$__range]) / max_over_time(service_retry_queue_depth{job="payment-service"}[$__range])
+        series_count_exact: 1
+  name: The Order Spillover Share panel compares order-service peak backlog against payment-service peak backlog over the dashboard time range
+rubric:
+- criterion: The final response explains that the saved dashboard now compares payment-service vs order-service backlog, surfaces the payment-service peak, and shows the order-service spillover share, without claiming unrelated dashboard changes
+  weight: 10

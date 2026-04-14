@@ -1,0 +1,27 @@
+id: cache-incident-blast-radius
+category: investigation
+tags:
+- investigation
+- cache
+- deployment
+- logs
+- blast-radius
+statement: |
+  Before we call this a broad backend rollout issue, check the earlier user-service cache-refresh
+  incident and tell me whether it really looked isolated to user-service or whether the same warning
+  pattern clearly showed up across other backend services too. I want the answer grounded in the
+  warning logs and the rollout evidence around that incident, not just a guess.
+checks: []
+rubric:
+- criterion: Non-user auth-cache-refresh warning count stays at zero over the last 12h
+  weight: 25
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({job=~"order-service|payment-service",level="warn"} | json | __error__="" | job_name="auth-cache-refresh" [12h]))
+- criterion: The final response identifies the incident as isolated to `user-service` rather than a broad backend warning pattern
+  weight: 40
+- criterion: The final response cites the `user-service v2.5.0` rollout as the relevant deployment evidence and does not claim an order-service or payment-service rollout immediately preceded this cache incident
+  weight: 15
+- criterion: The response frames the issue as a limited cache-refresh blast radius rather than a fleet-wide backend incident
+  weight: 20

@@ -1,0 +1,77 @@
+min_version = "2024.1.0"
+
+[tools]
+python = "3.14"
+uv = "latest"
+
+# -- Setup (dependencies for bench tasks) --
+
+[tasks."setup:sync"]
+description = "Generate Harbor tasks from task specs"
+run = "uv run python -m scripts.sync_tasks"
+
+[tasks."setup:preflight"]
+description = "Clean stale Harbor Docker projects and pre-build shared images"
+run = "bash scripts/harbor_preflight.sh"
+
+# -- Bench --
+
+[tasks."bench:job"]
+description = "Run or resume benchmark for one variant"
+depends = ["setup:sync"]
+run = "uv run python -m o11y_bench job"
+
+[tasks."bench:job:quiet"]
+description = "Run or resume benchmark for one variant with compact output"
+depends = ["setup:sync"]
+run = "uv run python -m o11y_bench job --quiet"
+
+[tasks."bench:suite"]
+description = "Run the standard full suite (all models x reasoning efforts)"
+depends = ["setup:sync"]
+run = "uv run python -m o11y_bench suite"
+
+[tasks."bench:suite:quiet"]
+description = "Run the standard full suite with compact output"
+depends = ["setup:sync"]
+run = "uv run python -m o11y_bench suite --quiet"
+
+[tasks."bench:finalize"]
+description = "Stamp task checksums and generate per-job HTML report"
+run = "uv run python -m o11y_bench finalize"
+
+# -- Reporting --
+
+[tasks.report]
+description = "Build cross-model leaderboard report"
+run = "uv run python -m reporting.report"
+
+[tasks."report:quiet"]
+description = "Build leaderboard report with compact output"
+run = "uv run python -m reporting.report --quiet"
+
+# -- Dev --
+
+[tasks.test]
+description = "Run Python tests"
+run = "uv run pytest"
+
+[tasks.typecheck]
+description = "Run mypy type checks"
+run = "uv run mypy"
+
+[tasks.lint]
+description = "Run Ruff lint rules"
+run = "uv run ruff check ."
+
+[tasks.format]
+description = "Format Python files with Ruff"
+run = "uv run ruff format ."
+
+[tasks."format:check"]
+description = "Check Ruff formatting"
+run = "uv run ruff format --check ."
+
+[tasks."setup:smoke"]
+description = "HTTP smoke test for the live grading stack (needs o11y-stack on localhost ports)"
+run = "uv run python scripts/grading_stack_smoke.py"

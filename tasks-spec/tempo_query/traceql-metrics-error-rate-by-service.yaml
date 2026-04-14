@@ -1,0 +1,29 @@
+id: traceql-metrics-error-rate-by-service
+category: tempo_query
+tags:
+- traceql
+- metrics
+- rate
+- errors
+- topk
+statement: |
+  Over the last day, which service looks worst for errors on POST /api/payments? I want the
+  name, a trace id if you find one, and whatever numbers or examples make the case.
+checks:
+- weight: 40
+  type: grounding
+  params:
+    prefix_min_chars: 8
+    mode: tool_trace_id
+  name: Response cites a trace ID that appears in Tempo tool results
+rubric:
+- criterion: The final response explains why payment-service shows the highest erroring-span rate for POST /api/payments using span or metric evidence from the transcript
+  weight: 10.0
+- criterion: The final response cites at least one numeric rate, count, or duration from traces or metrics to support the conclusion
+  weight: 15.0
+- criterion: The response identifies payment-service
+  weight: 25.0
+- criterion: The final response discusses failing requests using error, 5xx, failed span, or non-ok status wording
+  weight: 20.0
+- criterion: The response references payments traffic
+  weight: 15.0

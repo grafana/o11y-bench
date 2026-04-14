@@ -1,0 +1,28 @@
+id: promql-highest-backend-error-ratio
+category: prometheus_query
+tags:
+- promql
+- error-rate
+- aggregation
+- ranking
+statement: |
+  Over the last 6 hours, which backend had the highest 5xx share? Give the backend and its share.
+rubric:
+- criterion: The response ties the winning job and share to Prometheus query output visible in the transcript
+  weight: 5
+- criterion: The response answers directly and does not bury the winner behind extra comparison detail
+  weight: 5
+- criterion: The final response identifies the winning backend
+  weight: 35
+  fact:
+    kind: query
+    backend: prometheus
+    query: (sum by (job) (increase(http_requests_total{status=~"5..",job=~"user-service|order-service|payment-service"}[6h]))) / (sum by (job) (increase(http_requests_total{job=~"user-service|order-service|payment-service"}[6h])))
+    limit: 3
+- criterion: The final response states the winning backend's 5xx share consistently with facts
+  weight: 45
+  fact:
+    kind: query
+    backend: prometheus
+    query: (sum by (job) (increase(http_requests_total{status=~"5..",job=~"user-service|order-service|payment-service"}[6h]))) / (sum by (job) (increase(http_requests_total{job=~"user-service|order-service|payment-service"}[6h])))
+    limit: 3

@@ -1,0 +1,49 @@
+id: promql-capacity-analysis
+category: prometheus_query
+tags:
+- promql
+- metrics
+- capacity
+- prediction
+- resource
+statement: |
+  Using Prometheus `process_cpu_seconds_total` and `process_resident_memory_bytes`, assess how
+  our services are doing on CPU and memory at evaluation time versus the worst point in the last
+  6 hours. Give the current fleet-wide totals (aggregate CPU rate over roughly the last hour and
+  current total resident memory), the worst 6h fleet memory peak, rank the top two jobs by CPU and
+  the top two by resident memory, and then say whether usage still looks comfortable or whether any
+  jobs stand out as relatively tighter.
+checks: []
+rubric:
+- criterion: The final response states the current aggregate CPU rate accurately, allowing equivalent wording like CPU-seconds per second or cores.
+  weight: 28
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum(rate(process_cpu_seconds_total[1h]))
+- criterion: The final response states Aggregate resident memory accurately.
+  weight: 26
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum(process_resident_memory_bytes)
+- criterion: The final response states Peak fleet resident memory over the last 6h accurately.
+  weight: 18
+  fact:
+    kind: query
+    backend: prometheus
+    query: max_over_time(sum(process_resident_memory_bytes)[6h:1m])
+- criterion: The transcript shows Prometheus evidence for both CPU and memory, including a current snapshot and a 6h lookback or peak comparison
+  weight: 12.0
+- criterion: The final response ranks the top two CPU jobs in descending order in a way that is consistent with the transcript's Prometheus evidence
+  weight: 16.0
+- criterion: The final response ranks the top two resident-memory jobs in descending order in a way that is consistent with the transcript's Prometheus evidence
+  weight: 14.0
+- criterion: The final response interprets what the numbers mean for headroom or risk (for example which jobs look tight or comfortable), not only pastes raw figures - answer YES if any clear judgment appears, regardless of exact adjectives
+  weight: 15.0
+- criterion: The final response discusses CPU or memory capacity in plain language (usage, headroom, saturation, risk, scaling, or similar)
+  weight: 18.0
+- criterion: The final response compares current memory against the 6h peak rather than treating the current snapshot as the whole story
+  weight: 12.0
+- criterion: Any strong scaling or outage-risk claim in the final answer is supported by Prometheus or metrics tool output in the transcript
+  weight: 15.0

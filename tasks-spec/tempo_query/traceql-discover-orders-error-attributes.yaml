@@ -1,0 +1,29 @@
+id: traceql-discover-orders-error-attributes
+category: tempo_query
+tags:
+- traceql
+- discovery
+- attributes
+- errors
+- orders
+statement: |
+  Orders are failing on POST /api/orders. Walk me through one failed request end-to-end - what
+  services show up, what failed first, and what fields in the trace actually tell you that? Please
+  include the trace id for the failed request.
+checks:
+- weight: 55
+  type: grounding
+  params:
+    prefix_min_chars: 8
+    assistant_scope: all
+    mode: tool_trace_id
+  name: Response cites a trace ID that appears in Tempo tool results
+rubric:
+- criterion: The final response distinguishes the span where the error originates from upstream spans that only reflect the failed HTTP response
+  weight: 10.0
+- criterion: The response ties the walkthrough to POST /api/orders or order/checkout wording
+  weight: 15.0
+- criterion: The response cites span-level evidence (HTTP status on spans, OTel status code, or named attributes - not only service names)
+  weight: 30.0
+- criterion: Any asserted failing service or hop in the final answer appears in trace or tool output in the transcript
+  weight: 15.0

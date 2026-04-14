@@ -1,0 +1,79 @@
+id: dashboard-add-deployment-annotation
+category: dashboarding
+tags:
+- dashboard
+- grafana
+- annotation
+- loki
+setup_dashboards:
+- uid: svc-annotate
+  title: Service Overview Annotate
+  panels:
+  - id: 1
+    title: Request Rate
+    type: timeseries
+    gridPos:
+      h: 8
+      w: 24
+      x: 0
+      y: 0
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: sum(rate(http_requests_total{job="payment-service"}[5m]))
+      refId: A
+statement: |
+  Could you update the saved "Service Overview Annotate" dashboard (`svc-annotate`) so deployment
+  rollouts are visible on the graph? Add a deployment annotation from logs for order-service and
+  payment-service, and keep the existing panel in place.
+checks:
+- weight: 70
+  type: state
+  params:
+    uid: svc-annotate
+    mode: dashboard_state
+    panel_count: 1
+    panels:
+    - title: Request Rate
+      type: timeseries
+      datasource_type: prometheus
+    annotations:
+    - datasource_type: loki
+      enabled: true
+      execute_cases:
+      - result_kind: loki_streams
+        lookback_sec: 86400
+        required_json_fields:
+        - service
+        - version
+        - message
+        json_field_matchers:
+        - field: event
+          value_any_of:
+          - deployment
+        - field: service
+          value_any_of:
+          - order-service
+      match_count: 1
+    - datasource_type: loki
+      enabled: true
+      execute_cases:
+      - result_kind: loki_streams
+        lookback_sec: 86400
+        required_json_fields:
+        - service
+        - version
+        - message
+        json_field_matchers:
+        - field: event
+          value_any_of:
+          - deployment
+        - field: service
+          value_any_of:
+          - payment-service
+      match_count: 1
+  name: Service Overview Annotate keeps the original panel and adds a deployment annotation
+rubric:
+- criterion: The response explains that rollout markers now appear on the existing graph and does not claim unrelated dashboard changes
+  weight: 30

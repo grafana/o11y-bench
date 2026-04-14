@@ -1,0 +1,167 @@
+id: dashboard-repair-cache-review
+category: dashboarding
+tags:
+- dashboard
+- grafana
+- repair
+- cache
+- loki
+- prometheus
+setup_dashboards:
+- uid: user-access-cache-review
+  title: User Access Cache Review
+  panels:
+  - id: 1
+    title: User P95 Latency
+    type: timeseries
+    gridPos:
+      h: 8
+      w: 12
+      x: 0
+      y: 0
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="user-service"}[5m])) by (le))
+      refId: A
+  - id: 2
+    title: Cache Lag
+    type: stat
+    gridPos:
+      h: 8
+      w: 12
+      x: 12
+      y: 0
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: max_over_time(service_retry_queue_depth{job="payment-service"}[$__range])
+      refId: A
+  - id: 3
+    title: Warning Logs
+    type: logs
+    gridPos:
+      h: 8
+      w: 24
+      x: 0
+      y: 8
+    datasource:
+      type: loki
+      uid: loki
+    targets:
+    - expr: '{job="payment-service",level="warn"} | json'
+      refId: A
+  annotations:
+    list:
+    - name: Deployments
+      datasource:
+        type: loki
+        uid: loki
+      enable: true
+      titleFormat: '{{ service }} {{ version }}'
+      textFormat: '{{ message }}'
+      expr: '{job="payment-service"} | json | event="deployment"'
+statement: |
+  The saved "User Access Cache Review" dashboard (`user-access-cache-review`) is supposed to help us
+  review the earlier user-service cache-refresh incident, but it is wired to the wrong signals right
+  now. Please repair the saved dashboard so it keeps the existing "User P95 Latency" panel and also
+  has a stat panel titled exactly "Peak Cache Refresh Lag" using the user-service cache lag metric
+  over the current dashboard time range, a timeseries panel titled exactly "Cache Refresh Lag" for
+  that same metric over time, and a logs panel titled exactly "Cache Refresh Warnings" filtered to
+  the user-service `auth-cache-refresh` warning lines. Also fix the saved deployment annotation so it
+  shows the user-service rollout markers instead of the payment-service ones.
+checks:
+- weight: 35
+  type: state
+  params:
+    uid: user-access-cache-review
+    mode: dashboard_state
+    panel_count: 4
+    panels:
+    - title: User P95 Latency
+      type: timeseries
+      datasource_type: prometheus
+    - title: Peak Cache Refresh Lag
+      type: stat
+      datasource_type: prometheus
+    - title: Cache Refresh Lag
+      type: timeseries
+      datasource_type: prometheus
+    - title: Cache Refresh Warnings
+      type: logs
+      datasource_type: loki
+  name: User Access Cache Review has the repaired cache incident layout with the expected panels
+- weight: 35
+  type: state
+  params:
+    uid: user-access-cache-review
+    mode: dashboard_state
+    panels:
+    - title: Peak Cache Refresh Lag
+      type: stat
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_scalar
+        canonical_query: max_over_time(service_cache_refresh_lag_seconds{job="user-service"}[$__range])
+    - title: Cache Refresh Lag
+      type: timeseries
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_vector
+        canonical_query: service_cache_refresh_lag_seconds{job="user-service"}
+        distinct_label_values:
+        - name: job
+          values_exact:
+          - user-service
+  name: The repaired cache lag panels use the user-service cache lag metric instead of the retry backlog metric
+- weight: 20
+  type: state
+  params:
+    uid: user-access-cache-review
+    mode: dashboard_state
+    panels:
+    - title: Cache Refresh Warnings
+      type: logs
+      datasource_type: loki
+      execute_cases:
+      - result_kind: loki_streams
+        lookback_sec: 86400
+        json_field_matchers:
+        - field: job_name
+          value_any_of:
+          - auth-cache-refresh
+        distinct_label_values:
+        - source: stream
+          name: job
+          values_exact:
+          - user-service
+    annotations:
+    - datasource_type: loki
+      enabled: true
+      title_format_contains:
+      - service
+      - version
+      text_format_contains:
+      - message
+      execute_cases:
+      - result_kind: loki_streams
+        lookback_sec: 86400
+        required_json_fields:
+        - service
+        - version
+        - message
+        json_field_matchers:
+        - field: event
+          value_any_of:
+          - deployment
+        distinct_label_values:
+        - source: json
+          name: service
+          values_exact:
+          - user-service
+  name: The repaired logs panel and deployment annotation point at the user-service cache incident signals
+rubric:
+- criterion: The final response explains that the saved dashboard was repaired to focus on the user-service cache incident and does not claim unrelated dashboard changes
+  weight: 10

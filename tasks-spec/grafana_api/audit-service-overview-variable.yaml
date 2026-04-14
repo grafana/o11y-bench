@@ -1,0 +1,104 @@
+id: audit-service-overview-variable
+category: grafana_api
+tags:
+- grafana
+- dashboard
+- variable
+- audit
+setup_dashboards:
+- uid: service-overview-variable-audit
+  title: Service Overview Variable Audit
+  templating:
+    list:
+    - name: service
+      type: query
+      datasource:
+        type: prometheus
+        uid: prometheus
+      query:
+        query: label_values(http_requests_total, job)
+        refId: StandardVariableQuery
+      includeAll: true
+      multi: true
+      current: {}
+  panels:
+  - id: 1
+    title: Request Rate
+    type: timeseries
+    gridPos:
+      h: 8
+      w: 12
+      x: 0
+      y: 0
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: sum(rate(http_requests_total{job=~"${service:regex}"}[5m]))
+      refId: A
+  - id: 2
+    title: Recent Errors
+    type: logs
+    gridPos:
+      h: 8
+      w: 12
+      x: 12
+      y: 0
+    datasource:
+      type: loki
+      uid: loki
+    targets:
+    - expr: '{job=~"${service:regex}"} | json | status >= 500'
+      refId: A
+statement: |
+  Audit the saved "Service Overview Variable Audit" dashboard (`service-overview-variable-audit`) for
+  me. I want to know whether it has a service dropdown that supports All and multi-select, and which
+  panels are wired to that selection.
+checks:
+- weight: 35
+  type: state
+  params:
+    uid: service-overview-variable-audit
+    mode: dashboard_state
+    variable_count: 1
+    variables:
+    - name: service
+      type: query
+      include_all: true
+      multi: true
+      query:
+        language: grafana_label_values
+        metric_name: http_requests_total
+        label_name: job
+    panels:
+    - title: Request Rate
+      type: timeseries
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_vector
+        bindings:
+          service: payment-service
+        series_count_exact: 1
+        min_value: 0
+        distinct_label_values:
+        - name: job
+          values_exact: []
+      - result_kind: prometheus_vector
+        bindings:
+          service: __all__
+        series_count_exact: 1
+        min_value: 0
+        distinct_label_values:
+        - name: job
+          values_exact: []
+    - title: Recent Errors
+      type: logs
+      datasource_type: loki
+  name: Service Overview Variable Audit has the expected service variable semantics and panel mix
+rubric:
+- criterion: The final response accurately explains that the dashboard has a service dropdown with All and multi-select enabled, and it identifies which panels follow that selection
+  weight: 65
+  fact:
+    kind: resource
+    resource: dashboard
+    uid: service-overview-variable-audit

@@ -1,0 +1,41 @@
+id: payments-path-root-cause
+category: investigation
+tags:
+- incident
+- logs
+- traces
+- path
+- root-cause
+statement: |
+  Orders are failing, but I need to know whether this is really a payments-path incident or a
+  broader backend mess. Using roughly the last six hours of telemetry, tell me which HTTP endpoint
+  owns the most true 5xx request failures in the request logs, about how many it generated, and
+  roughly what share of all 5xx request failures that path accounts for. Then use a representative
+  trace for that same path to tell me which backend service first fails and give me one trace id
+  you actually saw.
+checks:
+- weight: 20
+  type: grounding
+  params:
+    prefix_min_chars: 8
+    mode: tool_trace_id
+  name: Response cites a trace ID that appears in Tempo tool results
+rubric:
+- criterion: The final response states 5xx request-log count for the dominant payments path accurately.
+  weight: 30
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({job=~".+"} | json | __error__="" | path="/api/payments" | status >= 500 [6h]))
+- criterion: The final response states Payments-path share of all 5xx request logs accurately.
+  weight: 25
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({job=~".+"} | json | __error__="" | path="/api/payments" | status >= 500 [6h])) / sum(count_over_time({job=~".+"} | json | __error__="" | status >= 500 [6h]))
+- criterion: The final response identifies `/api/payments` as the endpoint carrying the most true 5xx request failures in the window and ties that claim to log evidence rather than only generic incident wording
+  weight: 10
+- criterion: The final response identifies `payment-service` as the backend where the representative payments-path trace first fails, not merely an upstream relay layer
+  weight: 10
+- criterion: The final response frames the incident as payments-path-centered rather than a generic whole-fleet failure, while still allowing mention of downstream symptoms on other services when supported by the transcript
+  weight: 5

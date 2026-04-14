@@ -1,0 +1,32 @@
+id: promql-retry-backlog-triage
+category: prometheus_query
+tags:
+- promql
+- queue
+- backlog
+- triage
+- incident
+statement: |
+  We think the payment incident may have built up retries behind the scenes. Over roughly the last
+  six hours, which service showed the highest retry/backlog depth, about how high did it get, and
+  does the next-worst service look like a smaller spillover or a comparable primary problem?
+checks: []
+rubric:
+- criterion: The final response states Highest retry/backlog depth accurately.
+  weight: 45
+  fact:
+    kind: query
+    backend: prometheus
+    query: max_over_time(service_retry_queue_depth{job=~".+"}[6h])
+- criterion: The final response states Order-service retry/backlog depth accurately.
+  weight: 25
+  fact:
+    kind: query
+    backend: prometheus
+    query: max_over_time(service_retry_queue_depth{job="order-service"}[6h])
+- criterion: The final response identifies `payment-service` as the service with the highest retry/backlog depth and treats it as the primary backlog signal
+  weight: 10
+- criterion: The final response compares the next-worst service against the top backlog and explains whether it looks like smaller spillover or a comparable co-primary issue
+  weight: 15
+- criterion: The response uses retry, queue, or backlog wording tied to the incident rather than only reporting bare numbers
+  weight: 5

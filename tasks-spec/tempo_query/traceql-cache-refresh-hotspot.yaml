@@ -1,0 +1,29 @@
+id: traceql-cache-refresh-hotspot
+category: tempo_query
+tags:
+- traceql
+- traces
+- cache
+- user-service
+- latency
+statement: |
+  Earlier user-profile requests slowed down, but I want the trace-level hotspot rather than a general
+  service summary. Looking at GET /api/users traces from that earlier incident window, which
+  operation inside user-service keeps eating the time, and does that same hotspot recur across
+  several slow examples or only some of them? Include one trace id you actually saw.
+checks:
+- weight: 45
+  type: grounding
+  params:
+    prefix_min_chars: 8
+    mode: tool_trace_id
+  name: Response cites a trace ID that appears in Tempo tool results
+rubric:
+- criterion: The final response identifies the dominant user-service operation in the slow GET `/api/users` traces rather than stopping at only a generic service-level summary
+  weight: 20
+- criterion: The final response names `user-service` and `GET /api/users`
+  weight: 15
+- criterion: The final response states whether the same hotspot recurs across several slow traces or only some of them
+  weight: 10
+- criterion: Any named hotspot in the final answer is grounded in trace spans or timings from the transcript
+  weight: 10

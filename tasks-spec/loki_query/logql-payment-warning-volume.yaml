@@ -1,0 +1,23 @@
+id: logql-payment-warning-volume
+category: loki_query
+tags:
+- logql
+- logs
+- warnings
+- payment
+statement: |
+  Over roughly the last six hours, how noisy were warning logs from payment-service? Give me an
+  approximate warning count and tell me whether these look like payment-service warnings rather than
+  a fleet-wide mixed bag.
+checks: []
+rubric:
+- criterion: The final response states Payment-service warning-log count accurately.
+  weight: 70
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({job="payment-service",level="warn"}[6h]))
+- criterion: The final response identifies payment-service as the warning source and reports an approximate warning count
+  weight: 20
+- criterion: The response frames the result as payment-service warning volume rather than a generic all-service log summary
+  weight: 10

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>o11y-bench — {model_display} — {job_timestamp}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    pre {{ white-space: pre-wrap; word-break: break-word; }}
+    details > summary {{ list-style: none; }}
+    details > summary::-webkit-details-marker {{ display: none; }}
+    details > summary::before {{ content: '\25B6'; display: inline-block; width: 1em;
+      font-size: 0.6em; vertical-align: middle;
+      margin-right: 0.5em; color: #9ca3af; transition: transform 0.15s;
+      flex-shrink: 0; }}
+    details[open] > summary::before {{ content: '\25BC'; }}
+    /* Rendered assistant Markdown (final turn) */
+    .agent-markdown {{ max-width: none; }}
+    .agent-markdown h1 {{ font-size: 0.95rem; font-weight: 700; margin: 0.6em 0 0.35em; color: #111827; }}
+    .agent-markdown h2 {{ font-size: 0.875rem; font-weight: 600; margin: 0.6em 0 0.3em; color: #111827; }}
+    .agent-markdown h3 {{ font-size: 0.8125rem; font-weight: 600; margin: 0.5em 0 0.25em; color: #374151; }}
+    .agent-markdown p {{ margin: 0.35em 0; }}
+    .agent-markdown ul, .agent-markdown ol {{ margin: 0.35em 0; padding-left: 1.25em; }}
+    .agent-markdown li {{ margin: 0.15em 0; }}
+    .agent-markdown table {{ border-collapse: collapse; width: 100%; margin: 0.5em 0; font-size: 0.7rem; }}
+    .agent-markdown th, .agent-markdown td {{ border: 1px solid #e5e7eb; padding: 0.25rem 0.45rem; text-align: left; vertical-align: top; }}
+    .agent-markdown th {{ background: #f9fafb; font-weight: 600; color: #374151; }}
+    .agent-markdown hr {{ margin: 0.65em 0; border: 0; border-top: 1px solid #e5e7eb; }}
+    .agent-markdown pre {{ background: #f3f4f6; padding: 0.45rem 0.55rem; border-radius: 0.25rem; overflow-x: auto; font-size: 0.65rem; margin: 0.4em 0; }}
+    .agent-markdown code {{ background: #f3f4f6; padding: 0.06rem 0.25rem; border-radius: 0.15rem; font-size: 0.85em; }}
+    .agent-markdown pre code {{ background: transparent; padding: 0; font-size: inherit; }}
+    .agent-markdown blockquote {{ margin: 0.4em 0; padding-left: 0.65em; border-left: 3px solid #d1d5db; color: #6b7280; }}
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div class="max-w-5xl mx-auto px-4 py-8">
+
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-gray-900">o11y-bench Report</h1>
+      <div class="mt-2 text-sm text-gray-500 space-y-0.5">
+        <p><strong>Model:</strong> {model_display}</p>
+        <p><strong>Job:</strong> <code class="bg-gray-100 px-1 rounded font-mono text-xs">{job_id}</code></p>
+        <p><strong>Timestamp:</strong> {job_timestamp}</p>
+        <p><strong>Shots per task:</strong> {shots_per_task}</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
+      <div class="bg-white rounded-lg border border-gray-200 p-3">
+        <div class="text-xs text-gray-400">{k_label_title}</div>
+        <div class="mt-1 text-2xl font-bold {pass_hat_rate_color}">{pass_hat_rate_pct:.1f}%</div>
+        <div class="mt-1.5 w-full bg-gray-100 rounded-full h-1.5">
+          <div class="h-1.5 rounded-full {pass_hat_rate_bar}" style="width: {pass_hat_rate_bar_pct:.0f}%"></div>
+        </div>
+        <div class="mt-1 text-xs text-gray-500">{tasks_consistent}/{total_tasks} tasks</div>
+      </div>
+      <div class="bg-white rounded-lg border border-gray-200 p-3">
+        <div class="text-xs text-gray-400">{pass_at_k_label}</div>
+        <div class="mt-1 text-2xl font-bold {pass_rate_color}">{pass_rate_pct:.1f}%</div>
+        <div class="mt-1.5 w-full bg-gray-100 rounded-full h-1.5">
+          <div class="h-1.5 rounded-full {pass_rate_bar}" style="width: {pass_rate_bar_pct:.0f}%"></div>
+        </div>
+        <div class="mt-1 text-xs text-gray-500">{tasks_passed}/{total_tasks} tasks</div>
+      </div>
+      <div class="bg-white rounded-lg border border-gray-200 p-3">
+        <div class="text-xs text-gray-400">Mean Score</div>
+        <div class="mt-1 text-2xl font-bold {mean_score_color}">{mean_score_pct:.1f}%</div>
+        <div class="mt-1.5 w-full bg-gray-100 rounded-full h-1.5">
+          <div class="h-1.5 rounded-full {mean_score_bar}" style="width: {mean_score_bar_pct:.0f}%"></div>
+        </div>
+        <div class="mt-1 text-xs text-gray-500">avg grader score · {n_trials} trials</div>
+      </div>
+      <div class="bg-white rounded-lg border border-gray-200 p-3">
+        <div class="text-xs text-gray-400">Cost &amp; Time</div>
+        <div class="mt-1 text-2xl font-bold text-gray-900">{total_cost_fmt}</div>
+        <div class="mt-1 text-xs text-gray-500">agent time {total_agent_time_fmt}</div>
+        <div class="mt-0.5 text-xs text-gray-500">{n_trials} trials · {total_tasks} tasks</div>
+      </div>
+    </div>
+    <div class="text-xs text-gray-500 mb-4">Tokens: {total_tokens_in} in / {total_tokens_out} out / {total_tokens_cache} cache read total · {total_tokens_per_trial} tokens/trial ({tokens_in_per_trial} in / {tokens_out_per_trial} out, {tokens_cache_per_trial} cache) · {steps_per_trial} steps/trial</div>
+
+    <div class="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+      <table class="w-full">
+        <thead><tr class="border-b border-gray-200">
+          <th class="py-1 px-3 text-xs text-left text-gray-400 font-medium">Category</th>
+          <th class="py-1 px-3 text-xs text-right text-gray-400 font-medium">Pass^k</th>
+          <th class="py-1 px-3 text-xs text-right text-gray-400 font-medium">Pass Rate</th>
+          <th class="py-1 px-3 text-xs text-right text-gray-400 font-medium">Mean Score</th>
+          <th class="py-1 px-3 w-24"></th>
+        </tr></thead>
+        <tbody>{cat_rows}</tbody>
+      </table>
+    </div>
+
+    <div class="mb-8">
+      <h2 class="text-lg font-semibold text-gray-900 mb-3">
+        Tasks ({total_tasks})
+        <span class="text-sm font-normal text-gray-400">{n_trials} trials</span>
+      </h2>
+      {cat_sections}
+    </div>
+
+    <p class="text-center text-xs text-gray-400 py-4 border-t border-gray-200">
+      Generated by o11y-bench · Harbor framework
+    </p>
+
+  </div>
+  <script>
+    const problemDetails = {compressed_json};
+
+    async function inflate(b64) {{
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const stream = new Response(bytes).body.pipeThrough(new DecompressionStream('gzip'));
+      return await new Response(stream).text();
+    }}
+
+    document.querySelectorAll('details[data-problem]').forEach(el => {{
+      el.addEventListener('toggle', async () => {{
+        const detailEl = el.querySelector('[data-detail]');
+        if (!el.open || detailEl.dataset.rendered) return;
+        detailEl.dataset.rendered = '1';
+        const id = el.dataset.problem;
+        const payload = problemDetails[id];
+        if (!payload) {{ detailEl.innerHTML = '<div class="text-xs text-gray-400">No details</div>'; return; }}
+        try {{ detailEl.innerHTML = await inflate(payload); }}
+        catch {{ detailEl.innerHTML = '<div class="text-xs text-red-400">Failed to decompress details</div>'; }}
+      }});
+    }});
+  </script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+# Harbor docker-compose overlay for o11y-bench tasks.
+# The `main` service is automatically configured by Harbor.
+# We add the o11y-stack sidecar from the shared prebuilt image.
+#
+# The agent gets a scenario clock via O11Y_SCENARIO_TIME_ISO (prompt). Telemetry is generated
+# when o11y-stack starts; no shared clock volume between Harbor tasks.
+
+services:
+  main:
+    depends_on:
+      o11y-stack:
+        condition: service_healthy
+    environment:
+      O11Y_SCENARIO_TIME_ISO: "${O11Y_SCENARIO_TIME_ISO}"
+      STACK_HOST: "o11y-stack-${COMPOSE_PROJECT_NAME}"
+      GRAFANA_URL: "http://o11y-stack-${COMPOSE_PROJECT_NAME}:3000"
+      PROMETHEUS_URL: "http://o11y-stack-${COMPOSE_PROJECT_NAME}:9090"
+      LOKI_URL: "http://o11y-stack-${COMPOSE_PROJECT_NAME}:3100"
+      TEMPO_URL: "http://o11y-stack-${COMPOSE_PROJECT_NAME}:3200"
+      MCP_URL: "http://o11y-stack-${COMPOSE_PROJECT_NAME}:8080/mcp"
+    networks:
+      harbor-shared: {}
+
+  o11y-stack:
+    image: o11y-bench-o11y-stack:latest
+    environment:
+      O11Y_SCENARIO_TIME_ISO: "${O11Y_SCENARIO_TIME_ISO}"
+    volumes:
+      - ./setup.json:/task/setup.json:ro
+      - ${HOST_ARTIFACTS_PATH:-./artifacts}:/logs/artifacts
+    healthcheck:
+      test: ["CMD", "curl", "-sS", "-o", "/dev/null", "http://localhost:8080/"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 90s
+    networks:
+      harbor-shared:
+        aliases:
+          - "o11y-stack-${COMPOSE_PROJECT_NAME}"
+
+networks:
+  harbor-shared:
+    external: true
+    name: o11y-bench-shared

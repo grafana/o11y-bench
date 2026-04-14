@@ -1,0 +1,25 @@
+id: deployment-blast-radius-check
+category: investigation
+tags:
+- investigation
+- deployment
+- logs
+- incident
+statement: |
+  Before we blame code changes for the payment incident, check whether there were deployment
+  rollout events for the key backend services in roughly the last six hours. Tell me which services
+  show rollout events in that window and whether that looks broad or limited.
+checks: []
+rubric:
+- criterion: The final response states Deployment rollout event count accurately.
+  weight: 55
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({job=~"order-service|payment-service",level="info"} | json | __error__="" | event="deployment" [6h]))
+- criterion: The final response names both order-service and payment-service as the services with rollout events in the window, if supported by the logs
+  weight: 20
+- criterion: The response characterizes the rollout scope as limited to those backend services rather than a fleet-wide deployment wave
+  weight: 15
+- criterion: The response frames the finding as deployment evidence relevant to the incident rather than a generic log inventory
+  weight: 10

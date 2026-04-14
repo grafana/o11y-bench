@@ -1,0 +1,161 @@
+id: dashboard-create-service-overview
+category: dashboarding
+tags:
+- dashboard
+- grafana
+- create
+- prometheus
+statement: |
+  Could we add a Grafana dashboard titled exactly "Service Overview" - the saved dashboard
+  resource that appears in dashboard search, not only a folder - with request rate, error rate,
+  and p95 latency in one place so on-call can skim health at a glance? Please also add a service
+  dropdown for the backend jobs that emit request metrics here, make the saved metric queries
+  follow that selection, and make the saved dropdown work for one service, many services, or All
+  without editing the panels again. Also include a Loki panel for recent 5xx request logs for the
+  selected service slice, plus a deployment-events annotation from logs so rollout markers for
+  order-service and payment-service appear on the graphs with version text. Add a saved stat panel
+  titled exactly "Peak Retry Backlog" too, so on-call can see the selected service's peak retry
+  pile-up over the current dashboard time range.
+checks:
+- weight: 40
+  type: state
+  params:
+    title: Service Overview
+    mode: dashboard_state
+    variable_count: 1
+    variables:
+    - type: query
+      include_all: true
+      multi: true
+      query:
+        language: grafana_label_values
+        metric_name: http_requests_total
+        label_name: job
+    panels:
+    - type_any_of:
+      - timeseries
+      - stat
+      - gauge
+      datasource_type: prometheus
+      match_count: 4
+    - type: logs
+      datasource_type: loki
+  name: Grafana has a Service Overview dashboard with Prometheus metrics, recent 5xx logs, and a service variable
+- weight: 25
+  type: state
+  params:
+    title: Service Overview
+    mode: dashboard_state
+    annotations:
+    - datasource_type: loki
+      enabled: true
+      execute_cases:
+      - result_kind: loki_streams
+        lookback_sec: 86400
+        required_json_fields:
+        - service
+        - version
+        - message
+        json_field_matchers:
+        - field: event
+          value_any_of:
+          - deployment
+        distinct_label_values:
+        - source: json
+          name: service
+          values_exact:
+          - order-service
+          - payment-service
+  name: The saved Service Overview includes a Loki-backed deployment annotation for order-service and payment-service rollouts
+- weight: 35
+  type: state
+  params:
+    title: Service Overview
+    mode: dashboard_state
+    panels:
+    - type: timeseries
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_vector
+        bindings:
+          service: payment-service
+        series_count_min: 1
+        min_value: 0
+    - type: stat
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_vector
+        bindings:
+          service: payment-service
+        series_count_min: 1
+        min_value: 0
+    - type: timeseries
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_vector
+        bindings:
+          service: payment-service
+        series_count_min: 1
+        min_value: 0
+    - title: Peak Retry Backlog
+      type: stat
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_vector
+        bindings:
+          service: payment-service
+        series_count_exact: 1
+        min_value: 0
+        distinct_label_values:
+        - name: job
+          values_exact:
+          - payment-service
+      - result_kind: prometheus_vector
+        bindings:
+          service:
+          - payment-service
+          - order-service
+        series_count_exact: 2
+        min_value: 0
+        distinct_label_values:
+        - name: job
+          values_exact:
+          - payment-service
+          - order-service
+    - type: logs
+      datasource_type: loki
+      execute_cases:
+      - result_kind: loki_streams
+        lookback_sec: 86400
+        bindings:
+          service: payment-service
+        json_field_matchers:
+        - field: status
+          value_any_of:
+          - '500'
+          - '501'
+          - '502'
+          - '503'
+          - '504'
+          - '505'
+        distinct_label_values:
+        - source: stream
+          name: job
+          values_exact:
+          - payment-service
+      - result_kind: loki_streams
+        lookback_sec: 86400
+        bindings:
+          service:
+          - payment-service
+          - order-service
+        distinct_label_values:
+        - source: stream
+          name: job
+          values_exact:
+          - payment-service
+          - order-service
+  name: The saved Service Overview panels follow the service variable for metrics and recent 5xx logs
+rubric:
+- criterion: The response summarizes the dashboard as a service-filtered overview that makes it easy for an on-call reader to skim rate, errors, latency, peak retry backlog, recent 5xx logs, and deployment markers, and it describes the saved variable as working for one service, many services, or All
+  weight: 10

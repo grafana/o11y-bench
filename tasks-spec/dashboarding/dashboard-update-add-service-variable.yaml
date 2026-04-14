@@ -1,0 +1,155 @@
+id: dashboard-update-add-service-variable
+category: dashboarding
+tags:
+- dashboard
+- grafana
+- update
+- variables
+- templating
+setup_dashboards:
+- uid: service-overview
+  title: Service Overview
+  panels:
+  - id: 1
+    title: Request Rate
+    type: timeseries
+    gridPos:
+      h: 8
+      w: 12
+      x: 0
+      y: 0
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: rate(http_requests_total[5m])
+      refId: A
+  - id: 2
+    title: Error Rate
+    type: stat
+    gridPos:
+      h: 8
+      w: 12
+      x: 12
+      y: 0
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))
+      refId: A
+  - id: 3
+    title: P95 Latency
+    type: timeseries
+    gridPos:
+      h: 8
+      w: 24
+      x: 0
+      y: 8
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
+      refId: A
+statement: |
+  We'd like a service dropdown on "Service Overview" (`service-overview`) so on-call can scope
+  the whole board to one or more services - and still flip back to All when needed. Back it with
+  the backend Prometheus `job` values that emit request metrics here, and make the saved metric
+  queries keep working when someone picks one service, several services, or All from the saved
+  dropdown. Can you add that without wrecking what's already there?
+checks:
+- weight: 40
+  type: state
+  params:
+    uid: service-overview
+    mode: dashboard_state
+    variable_count: 1
+    variables:
+    - type: query
+      include_all: true
+      multi: true
+      query:
+        language: grafana_label_values
+        metric_name: http_requests_total
+        label_name: job
+    panels:
+    - type: timeseries
+      datasource_type: prometheus
+      match_count: 2
+    - type: stat
+      datasource_type: prometheus
+  name: Service Overview dashboard defines a service template variable
+- weight: 60
+  type: state
+  params:
+    uid: service-overview
+    mode: dashboard_state
+    panels:
+    - title: Request Rate
+      type: timeseries
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_vector
+        bindings:
+          service: payment-service
+        series_count_min: 1
+        min_value: 0
+      - result_kind: prometheus_vector
+        bindings:
+          service:
+          - payment-service
+          - order-service
+        series_count_min: 1
+        min_value: 0
+      - result_kind: prometheus_vector
+        bindings:
+          service: __all__
+        series_count_min: 1
+        min_value: 0
+    - title: Error Rate
+      type: stat
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_vector
+        bindings:
+          service: payment-service
+        series_count_exact: 1
+        min_value: 0
+        max_value: 1
+        distinct_label_values:
+        - name: job
+          values_exact: []
+        - name: status
+          values_exact: []
+      - result_kind: prometheus_vector
+        bindings:
+          service:
+          - payment-service
+          - order-service
+        series_count_exact: 1
+        min_value: 0
+        max_value: 1
+        distinct_label_values:
+        - name: job
+          values_exact: []
+        - name: status
+          values_exact: []
+    - title: P95 Latency
+      type: timeseries
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_vector
+        bindings:
+          service: payment-service
+        series_count_min: 1
+        min_value: 0
+      - result_kind: prometheus_vector
+        bindings:
+          service: __all__
+        series_count_min: 1
+        min_value: 0
+  name: The updated Service Overview keeps the original metric panels and uses the service variable in panel queries
+rubric:
+- criterion: The response clearly explains that Service Overview can now be scoped to one, many, or all services with saved queries that keep the dropdown working, without implying unsupported changes
+  weight: 10

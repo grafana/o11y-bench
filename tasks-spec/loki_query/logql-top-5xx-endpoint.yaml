@@ -1,0 +1,35 @@
+id: logql-top-5xx-endpoint
+category: loki_query
+tags:
+- logql
+- logs
+- 5xx
+- endpoint
+- aggregation
+statement: |
+  From Loki request logs (JSON lines with HTTP path and numeric status), which API path had the
+  most true 5xx responses in the last six hours? Name that path and give an approximate count (or
+  rate) for it. Also give roughly how many 5xx request log lines fall in the same six-hour window
+  across all paths combined.
+checks: []
+rubric:
+- criterion: Total 5xx request log lines match Loki (6h, JSON status >= 500)
+  weight: 35
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({job=~".+"} | json | __error__="" | status >= 500 [6h]))
+- criterion: The final response states Count of 5xx logs on the worst single path accurately.
+  weight: 35
+  fact:
+    kind: query
+    backend: loki
+    query: topk(1, sum by (path) (count_over_time({job=~".+"} | json | path=~".+" | __error__="" | status >= 500 [6h])))
+- criterion: The final response identifies the worst path by true 5xx count (or explains ties) and cites counts that match aggregate or metric-style LogQL results in the transcript - not a guess from a small capped log fetch; minor wording differences are fine
+  weight: 10.0
+- criterion: The response mentions an HTTP endpoint path
+  weight: 15.0
+- criterion: The final response mentions HTTP 5xx or server error status wording
+  weight: 15.0
+- criterion: The answer clearly separates 5xx failures from successful traffic (does not confuse them)
+  weight: 15.0

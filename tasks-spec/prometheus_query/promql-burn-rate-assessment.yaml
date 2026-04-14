@@ -1,0 +1,32 @@
+id: promql-burn-rate-assessment
+category: prometheus_query
+tags:
+- promql
+- payment-service
+- error-rate
+- temporal-comparison
+statement: |
+  payment-service threw a nasty 5xx spike a few hours ago. I need to know if it's still eating us or if it calmed down.
+  Compare payment-service's 1h 5xx share for two specific windows only: the 1h window ending now, and the comparable 1h window ending about 6 hours earlier.
+  Give me both numbers and your read: still bad, better, or roughly the same between those two views?
+rubric:
+- criterion: The final response states payment-service recent 5xx share accurately.
+  weight: 38
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum(increase(http_requests_total{job="payment-service",status=~"5.."}[1h])) / sum(increase(http_requests_total{job="payment-service"}[1h]))
+- criterion: The final response states payment-service 5xx share offset 6h accurately.
+  weight: 38
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum(increase(http_requests_total{job="payment-service",status=~"5.."}[1h] offset 6h)) / sum(increase(http_requests_total{job="payment-service"}[1h] offset 6h))
+- criterion: The transcript shows Prometheus or Explore-style work using rate() or increase() on http_requests_total for payment-service (status or 5xx filtering is fine), including a comparison across time (offset 6h, two explicit ranges, or clearly labeled now vs earlier query)
+  weight: 10.0
+- criterion: The final response gives both the recent-window and the ~6h-earlier-window payment-service error picture with numbers, percentages, or explicit low/high wording that aligns with those two windows - not only one of them
+  weight: 15.0
+- criterion: The final response states whether things look still bad, improved/settled, or about the same when comparing those two views
+  weight: 10.0
+- criterion: The final response names payment-service (not only generic "the service")
+  weight: 10.0

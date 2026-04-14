@@ -1,0 +1,27 @@
+id: logql-multi-stage-pipeline
+category: loki_query
+tags:
+- logql
+- logs
+- pipeline
+- parsing
+- advanced
+statement: |
+  Over the last six hours, which API endpoints look slowest in our request logs? Call out the
+  worst paths and give a few real examples with how long they took.
+checks: []
+rubric:
+- criterion: The final response states Max observed duration_ms accurately.
+  weight: 45
+  fact:
+    kind: query
+    backend: loki
+    query: max(max_over_time({job=~".+"} | json | unwrap duration_ms | __error__="" [6h]))
+- criterion: The final response identifies the slowest API paths using only real endpoints that are supported by the transcript's Loki evidence
+  weight: 30.0
+- criterion: The final response separates aggregate slowness per endpoint from specific example requests (for example worst path vs concrete slow calls)
+  weight: 5.0
+- criterion: The response cites numeric durations
+  weight: 25.0
+- criterion: Slow endpoints cited in the final answer reference log lines, counts, or query results from the transcript
+  weight: 15.0

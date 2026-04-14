@@ -1,0 +1,100 @@
+name: Validator Smoke
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validator-smoke:
+    name: Validator Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up environment
+        uses: ./.github/actions/setup-env
+        with:
+          save-cache: "true"
+
+      - name: Build o11y-stack image
+        run: docker build --tag o11y-bench-stack ./docker
+
+      - name: Start o11y-stack
+        run: >-
+          docker run --detach --name o11y-stack
+          --publish 3000:3000 --publish 9090:9090 --publish 3100:3100
+          --publish 3200:3200 --publish 8080:8080
+          o11y-bench-stack
+
+      - name: Wait for stack endpoints
+        run: |
+          set -euo pipefail
+
+          wait_for_url() {
+            local url=$1
+
+            for _ in $(seq 1 120); do
+              if curl -fsS "$url" > /dev/null 2>&1; then
+                return 0
+              fi
+              sleep 1
+            done
+
+            curl -fsS "$url" > /dev/null
+          }
+
+          wait_for_url http://127.0.0.1:3100/ready
+          wait_for_url http://127.0.0.1:3200/ready
+          wait_for_url http://127.0.0.1:9090/-/ready
+          wait_for_url http://127.0.0.1:3000/api/health
+
+      - name: Wait for Tempo search to return traces
+        run: |
+          set -euo pipefail
+
+          query='{ resource.service.name = "order-service" }'
+
+          for attempt in $(seq 1 60); do
+            now=$(date +%s)
+            start=$((now - 48 * 3600))
+
+            if curl -fsS --get \
+              --data-urlencode "q=${query}" \
+              --data-urlencode "limit=1" \
+              --data-urlencode "start=${start}" \
+              --data-urlencode "end=${now}" \
+              "http://127.0.0.1:3200/api/search" 2>/dev/null | jq -e '.traces | length > 0' > /dev/null; then
+              echo "Tempo search ready after ${attempt} attempt(s)"
+              exit 0
+            fi
+
+            sleep 1
+          done
+
+          echo "Tempo search did not return traces within 60 seconds" >&2
+          exit 1
+
+      - name: Run validator smoke
+        run: mise run setup:smoke -- --timeout 60
+
+      - name: Show o11y-stack logs on failure
+        if: failure()
+        run: docker logs o11y-stack
+
+      - name: Stop o11y-stack
+        if: always()
+        run: docker rm --force o11y-stack

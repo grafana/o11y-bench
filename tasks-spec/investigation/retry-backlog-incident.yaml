@@ -1,0 +1,33 @@
+id: retry-backlog-incident
+category: investigation
+tags:
+- incident
+- backlog
+- logs
+- metrics
+- payment
+statement: |
+  During the payment-led incident, did retries actually pile up somewhere or was that a false lead?
+  Using the last six hours of telemetry, tell me which service owned the main retry backlog, what
+  queue name showed up in the warning logs, about how high the main backlog got, and whether the
+  other service was only smaller spillover.
+checks: []
+rubric:
+- criterion: The final response states Peak payment-service retry backlog accurately.
+  weight: 35
+  fact:
+    kind: query
+    backend: prometheus
+    query: max_over_time(service_retry_queue_depth{job="payment-service"}[6h])
+- criterion: The final response states Peak order-service retry backlog accurately.
+  weight: 20
+  fact:
+    kind: query
+    backend: prometheus
+    query: max_over_time(service_retry_queue_depth{job="order-service"}[6h])
+- criterion: The final response identifies `payment-service` as the main retry backlog owner rather than presenting order-service as a co-primary backlog source
+  weight: 15
+- criterion: The final response names the queue as `payment-retries` and ties that queue name to warning-log evidence rather than only the metric name
+  weight: 15
+- criterion: The final response treats order-service as smaller spillover if it mentions it, not as the main backlog owner
+  weight: 15

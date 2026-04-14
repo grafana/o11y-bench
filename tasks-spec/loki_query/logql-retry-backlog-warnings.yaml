@@ -1,0 +1,24 @@
+id: logql-retry-backlog-warnings
+category: loki_query
+tags:
+- logql
+- logs
+- retries
+- backlog
+- queue
+statement: |
+  Can you check whether the retry backlog warning logs are actually showing up? Tell me which queue
+  name appears in those warnings and about how many of those warning log lines there were over the
+  last six hours.
+checks: []
+rubric:
+- criterion: The final response states Retry backlog warning-log count accurately.
+  weight: 60
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({job=~"payment-service|order-service",level="warn"} | json | __error__="" | queue="payment-retries" [6h]))
+- criterion: The final response names the queue as `payment-retries` and ties it to retry backlog warning logs
+  weight: 25
+- criterion: The response reports an approximate warning count over the requested window
+  weight: 15

@@ -1,0 +1,29 @@
+id: promql-error-rate
+category: prometheus_query
+tags:
+- promql
+- metrics
+- error-rate
+- rate
+- 5xx
+- services
+statement: |
+  Over the last hour, what overall share of HTTP requests returned 5xx across user-service,
+  order-service, and payment-service? In Prometheus those names are the `job` label values on
+  `http_requests_total` for API traffic here - ignore webapp and api-gateway. Report the share for the
+  full 60-minute window aggregated together, not a conclusion from a single short slice of the timeline.
+rubric:
+- criterion: The final response states 5xx share accurately.
+  weight: 65
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum(rate(http_requests_total{status=~"5..",job=~"user-service|order-service|payment-service"}[1h])) / sum(rate(http_requests_total{job=~"user-service|order-service|payment-service"}[1h]))
+- criterion: The transcript shows at least one metrics or Prometheus-style query (or Explore run) whose results plausibly support the stated 5xx share for those three jobs - answer YES if tool output mentions http_requests_total scoped to those services (e.g. via job), request rates, or 5xx counts aligned with that scope
+  weight: 10.0
+- criterion: The response expresses the result as a percentage, ratio, or share
+  weight: 15.0
+- criterion: The response refers to 5xx or server-side HTTP errors (not only generic errors)
+  weight: 10.0
+- criterion: Any numeric 5xx share in the final answer is supported by Prometheus results in the transcript for queries scoped to user-service, order-service, and payment-service - answer NO if the answer claims ~0% while cited metrics clearly show non-trivial 5xx for those jobs over the hour
+  weight: 15.0

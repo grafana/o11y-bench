@@ -1,0 +1,369 @@
+# o11y-bench
+
+`o11y-bench` is an open benchmark for evaluating LLM agents on observability and SRE tasks.
+It is built on top of [Harbor](https://harborframework.com) and runs agents against a real
+Grafana stack with Prometheus, Loki, and Tempo.
+
+The repo includes:
+
+- benchmark task specs
+- a default custom Harbor agent
+- grading and reporting logic
+- Docker images and config for the synthetic observability environment
+
+Each run produces machine-readable artifacts plus HTML reports for either a single job or a full
+comparison suite.
+
+`tasks-spec/` is the source of truth for benchmark scenarios.
+`tasks/` is generated output and should not be edited by hand.
+
+## What This Repo Does
+
+At a high level, a benchmark run does the following:
+
+1. Materializes benchmark tasks from `tasks-spec/`
+2. Starts the Harbor task container plus the observability sidecar stack
+3. Runs an agent against one or more tasks
+4. Grades the result against deterministic checks plus rubric criteria
+5. Writes job artifacts and HTML reports under `jobs/`
+
+The default agent lives in `agents/o11y_agent.py`, but you can also run Harbor built-in agents or
+your own custom Harbor agent class by import path.
+
+Each run also persists one scenario clock in `scenario_time.txt` under the job or suite directory.
+That keeps reruns and regrades aligned to the same synthetic data window.
+
+## Requirements
+
+You need all of the following installed locally:
+
+- `mise`
+- `uv`
+- Docker
+
+You also need model-provider API keys in your environment.
+
+Minimum environment variables:
+
+- `ANTHROPIC_API_KEY`
+  Used by the grading pipeline.
+- provider key(s) for the model you want to run
+  Examples:
+  - `OPENAI_API_KEY`
+  - `ANTHROPIC_API_KEY`
+  - `GOOGLE_API_KEY` or `GEMINI_API_KEY`
+
+Optional environment variables:
+
+- `OPENAI_API_BASE`
+  Use this for OpenAI-compatible endpoints.
+- `O11Y_SCENARIO_TIME_ISO`
+  Override the scenario clock for debugging.
+
+## Setup
+
+Clone the repo and install the pinned toolchain and Python environment:
+
+```bash
+git clone <your-fork-or-repo-url>
+cd o11y-bench
+mise install
+uv sync
+```
+
+That is the normal one-time setup.
+
+If you want to confirm the local toolchain is working before running a benchmark:
+
+```bash
+mise run setup:sync
+mise run lint
+mise run test
+```
+
+## Quick Start
+
+Run a single task with the default repo agent:
+
+```bash
+mise run bench:job -- --model openai/gpt-5.4-nano --task-name query-cpu-metrics --n-concurrent 1
+```
+
+This will:
+
+- regenerate `tasks/` from `tasks-spec/`
+- run the selected task with 3 attempts by default
+- write artifacts under `jobs/<job-name>/`
+- generate `jobs/<job-name>/run_report.html`
+
+If you want a quiet version of the same command:
+
+```bash
+mise run bench:job:quiet -- --model openai/gpt-5.4-nano --task-name query-cpu-metrics --n-concurrent 1
+```
+
+## Setup Details
+
+To regenerate tasks explicitly:
+
+```bash
+mise run setup:sync
+```
+
+If you invoke raw Harbor commands yourself instead of `mise run bench:*` or
+`uv run python -m o11y_bench ...`, run preflight first:
+
+```bash
+mise run setup:preflight
+```
+
+That pre-builds shared images and cleans stale Harbor Docker projects.
+
+## Running A Single Job
+
+Run one model across the benchmark:
+
+```bash
+mise run bench:job -- --model anthropic/claude-sonnet-4-6
+```
+
+Run a single task only:
+
+```bash
+mise run bench:job -- --model anthropic/claude-sonnet-4-6 --task-name query-cpu-metrics --n-concurrent 1
+```
+
+Run with a different reasoning level:
+
+```bash
+mise run bench:job -- --model openai/gpt-5.4-mini --reasoning-effort high
+```
+
+Run with a custom output location or name:
+
+```bash
+mise run bench:job -- --model openai/gpt-5.4-mini --jobs-dir /tmp/o11y-bench-jobs --job-name my-smoke-run
+```
+
+### Job Resume Behavior
+
+`bench:job` resumes by job directory.
+If the job already exists and the saved config is compatible, it reuses completed work and reruns
+only missing or retryable trials.
+
+This means:
+
+- rerunning the same command usually resumes
+- changing the model, reasoning effort, or agent configuration creates a distinct job variant
+- you can always force separation with `--job-name`
+
+Example default auto-generated job names:
+
+- `openai-gpt-5-4-nano-off-k3`
+- `openai-gpt-5-4-nano-high-k3`
+- `openai-gpt-5-4-nano-off-opencode-k3`
+- `openai-gpt-5-4-nano-off-agents-langchain-o11y-agent-langchaino11ybenchagent-k3`
+
+If you want a fresh run instead of resuming, pass a fresh `--job-name`.
+
+## Running With Different Agents
+
+### Default Repo Agent
+
+This is the normal path and uses the custom repo agent:
+
+```bash
+mise run bench:job -- --model openai/gpt-5.4-nano --task-name query-cpu-metrics
+```
+
+### Harbor Built-In Agent
+
+You can switch to a Harbor built-in agent with `--agent`:
+
+```bash
+mise run bench:job -- --model openai/gpt-5.4-nano --task-name query-cpu-metrics --agent opencode
+```
+
+### Custom Agent Import Path
+
+You can run any importable Harbor agent class with `--agent-import-path`:
+
+```bash
+mise run bench:job -- --model openai/gpt-5.4-nano --task-name query-cpu-metrics --agent-import-path agents.langchain_o11y_agent:LangChainO11yBenchAgent
+```
+
+Use either `--agent` or `--agent-import-path`, not both.
+
+The LangChain agent in this repo is intentionally a simple example of wiring a custom Harbor agent
+entrypoint through the existing benchmark flow.
+
+## Running The Standard Suite
+
+Run the standard comparison suite:
+
+```bash
+mise run bench:suite
+```
+
+By default, `bench:suite` resumes the latest suite directory when possible.
+
+To force a fresh suite directory:
+
+```bash
+mise run bench:suite -- --jobs-dir jobs/full-suite-$(date +%Y%m%d-%H%M%S)
+```
+
+To disable resume explicitly:
+
+```bash
+mise run bench:suite -- --no-resume --jobs-dir jobs/full-suite-$(date +%Y%m%d-%H%M%S)
+```
+
+To reduce local resource pressure:
+
+```bash
+mise run bench:suite -- --jobs-dir jobs/full-suite-$(date +%Y%m%d-%H%M%S) --n-concurrent 1
+```
+
+### Standard Suite Variants
+
+The standard suite currently covers these provider/model/reasoning combinations:
+
+- Anthropic
+  - `claude-haiku-4-5-20251001`: `off`, `low`, `high`
+  - `claude-opus-4-6`: `off`, `low`, `high`
+  - `claude-sonnet-4-5`: `off`, `high`
+  - `claude-sonnet-4-6`: `off`, `low`, `high`
+- OpenAI
+  - `gpt-5.1-codex-mini`: `off`, `high`
+  - `gpt-5.2-codex`: `off`, `high`
+  - `gpt-5.2-2025-12-11`: `off`, `high`
+  - `gpt-5.4-2026-03-05`: `off`, `low`, `high`
+  - `gpt-5.4-mini`: `off`, `low`, `high`
+  - `gpt-5.4-nano`: `off`, `low`, `high`
+- Google
+  - `gemini-3-flash-preview`: `off`, `high`
+  - `gemini-3.1-pro-preview`: `off`, `low`, `high`
+  - `gemini-3.1-flash-lite-preview`: `off`, `low`, `high`
+
+The suite uses the default repo agent.
+If you want to benchmark a custom agent across the same matrix, run `bench:job` variants yourself
+or extend suite orchestration in code.
+
+## Running Your Own Models
+
+If your model is reachable through Harbor and LiteLLM, pass it as `provider/model`.
+
+Examples:
+
+```bash
+mise run bench:job -- --model openai/gpt-5.4-mini
+mise run bench:job -- --model anthropic/claude-haiku-4-5-20251001
+mise run bench:job -- --model google/gemini-3-flash-preview
+```
+
+You can dry-run the job planner without executing Harbor:
+
+```bash
+uv run python -m o11y_bench job --model openai/gpt-5.4-nano --task-name query-cpu-metrics --dry-run
+```
+
+## Reports And Artifacts
+
+Single-job report:
+
+```text
+jobs/<job-name>/run_report.html
+```
+
+Full-suite report:
+
+```text
+jobs/<suite-id>/comparison.html
+```
+
+Useful artifacts inside each trial directory:
+
+- `agent/instruction.txt`
+- `agent/trajectory.json`
+- `agent/command-0/stdout.txt`
+- `verifier/grading_details.json`
+- `verifier/reward.txt`
+- `result.json`
+
+## Regrading Existing Runs
+
+If you changed grading and want to reuse existing transcripts without rerunning agents:
+
+```bash
+uv run python -m o11y_bench regrade --jobs-dir jobs/<suite-id> --path tasks
+```
+
+To regrade a specific job:
+
+```bash
+uv run python -m o11y_bench regrade --jobs-dir jobs --job-name <job-name> --path tasks
+```
+
+`regrade` reruns the verifier against saved transcripts and rewrites verifier outputs in place.
+For tasks whose checks need the live Grafana stack, it also starts a temporary local sidecar stack.
+
+## Manual Reporting Commands
+
+Rebuild a single run report:
+
+```bash
+uv run python -m reporting.run_report --job-dir jobs/<job-name>
+```
+
+Rebuild a suite report:
+
+```bash
+mise run report -- --jobs-dir jobs/<suite-id>
+```
+
+Compare two job directories directly:
+
+```bash
+uv run python -m reporting.compare_report --job-dir jobs/<suite-id>/<job-a> --job-dir jobs/<suite-id>/<job-b>
+```
+
+## Common Local Commands
+
+```bash
+mise run setup:sync
+mise run setup:preflight
+mise run setup:smoke
+mise run lint
+mise run format
+mise run typecheck
+mise run test
+mise run bench:job -- --model openai/gpt-5.4-nano --task-name query-cpu-metrics --n-concurrent 1
+mise run bench:suite
+```
+
+## Repo Layout
+
+- `tasks-spec/`
+  Source of truth for benchmark scenarios
+- `tasks/`
+  Generated Harbor task output
+- `agents/`
+  Default repo agent plus custom agent examples
+- `grading/`
+  Verifier, checks, facts, rubric judging, and scoring
+- `docker/`
+  Sidecar image and observability stack config
+- `environment/`
+  Harbor task container configuration
+- `o11y_bench/`
+  CLI, job orchestration, suite orchestration, resume, and regrade logic
+- `reporting/`
+  HTML report generation
+
+## Notes For Contributors
+
+- Edit `tasks-spec/`, not `tasks/`
+- Regenerate tasks after task-spec changes with `mise run setup:sync`
+- Keep tests small and behavior-focused
+- Be conservative with local concurrency if Docker resources are limited

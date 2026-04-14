@@ -1,0 +1,29 @@
+id: get-datasource-details
+category: grafana_api
+tags:
+- grafana
+- datasources
+- api
+statement: |-
+  How is our Prometheus datasource configured in Grafana - what URL is it hitting, and is it
+  proxy or direct access?
+checks:
+- weight: 55
+  type: state
+  params:
+    mode: datasource_detail
+    name: Prometheus
+    type: prometheus
+    require_url: true
+    require_access: true
+  name: Grafana has a Prometheus datasource with configured URL and access mode
+rubric:
+- criterion: The final response states the Prometheus datasource URL and access mode accurately, consistent with Grafana tool output in the transcript
+  weight: 30
+  fact:
+    kind: resource
+    resource: datasource_detail
+    name: Prometheus
+    type: prometheus
+- criterion: The final response presents the URL and access mode in an easy-to-scan structure and ties those facts to the user's question
+  weight: 15

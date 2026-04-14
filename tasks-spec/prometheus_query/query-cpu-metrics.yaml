@@ -1,0 +1,31 @@
+id: query-cpu-metrics
+category: prometheus_query
+tags:
+- promql
+- metrics
+- cpu
+statement: |
+  Checkout felt sluggish around six hours ago. Compare average CPU over that same ~6h window across
+  the monitored jobs: rank them from hottest to coolest, say about how much CPU the hottest one was
+  burning on average, and tell me whether backend CPU looks like the main culprit or a weak lead
+  for the slowdown.
+checks: []
+rubric:
+- criterion: The final response states roughly how much average CPU the hottest job was burning.
+  weight: 50
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum by (job) (rate(process_cpu_seconds_total{job=~".+"}[6h]))
+- criterion: The transcript shows Prometheus evidence comparing per-job CPU over the slowdown window rather than only a single point-in-time snapshot
+  weight: 20
+- criterion: The final response ranks the monitored jobs from hottest to coolest correctly.
+  weight: 30
+  fact:
+    kind: query
+    backend: prometheus
+    query: sort_desc(sum by (job) (rate(process_cpu_seconds_total{job=~".+"}[6h])))
+- criterion: The final response interprets whether CPU is a convincing incident lead or a weak one, not only which backend ranked highest
+  weight: 10
+- criterion: The final response frames the answer around the slowdown window rather than only a right-now snapshot
+  weight: 5

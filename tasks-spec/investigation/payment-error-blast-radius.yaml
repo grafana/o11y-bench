@@ -1,0 +1,27 @@
+id: payment-error-blast-radius
+category: investigation
+tags:
+- investigation
+- logs
+- metrics
+- payment
+- order
+statement: |
+  Over roughly the last six hours, did the payment incident mostly stay in payment-service or did
+  it clearly spill into order-service too? Give me the rough combined 5xx share for payment-service
+  and order-service together, say whether payment-service looks primary, and mention whether
+  order-service looks like spillover.
+checks: []
+rubric:
+- criterion: The final response states Payment + order 5xx share accurately.
+  weight: 55
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum(rate(http_requests_total{status=~"5..",job=~"payment-service|order-service"}[6h])) / sum(rate(http_requests_total{job=~"payment-service|order-service"}[6h]))
+- criterion: The final response identifies payment-service as the primary incident source rather than treating payment-service and order-service as equal co-primary failures
+  weight: 20
+- criterion: The final response treats order-service as spillover or knock-on impact if it mentions it
+  weight: 15
+- criterion: The response ties the answer to observed incident evidence in the transcript rather than giving only a generic guess
+  weight: 10

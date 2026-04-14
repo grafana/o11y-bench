@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  warm-cache:
+    name: Warm Cache
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up environment
+        uses: ./.github/actions/setup-env
+        with:
+          install-mise: "false"
+          save-cache: "true"
+
+  task-sync:
+    name: Task Sync
+    runs-on: ubuntu-latest
+    needs: warm-cache
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up environment
+        uses: ./.github/actions/setup-env
+
+      - name: Sync generated tasks
+        run: mise run setup:sync
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    needs: warm-cache
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up environment
+        uses: ./.github/actions/setup-env
+
+      - name: Run Ruff lint
+        run: mise run lint
+
+      - name: Check Python formatting
+        run: mise run format:check
+
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    needs: warm-cache
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up environment
+        uses: ./.github/actions/setup-env
+
+      - name: Run mypy
+        run: mise run typecheck
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: warm-cache
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up environment
+        uses: ./.github/actions/setup-env
+
+      - name: Run tests
+        run: mise run test
+
+  cli-smoke:
+    name: CLI Smoke
+    runs-on: ubuntu-latest
+    needs: warm-cache
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up environment
+        uses: ./.github/actions/setup-env
+
+      - name: Check Harbor help
+        run: uv run harbor run --help
+
+      - name: Dry-run the full suite command
+        run: >-
+          mise run bench:suite -- --dry-run --jobs-dir /tmp/o11y-bench-jobs/full-suite-ci-dry-run
+          --n-attempts 1 --n-concurrent 1
+
+      - name: Smoke test remaining CLI entrypoints
+        run: |
+          uv run python -m reporting.run_report --help
+          mise run report -- --help
+          uv run python -m reporting.compare_report --help

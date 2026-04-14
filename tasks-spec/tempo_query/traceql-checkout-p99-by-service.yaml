@@ -1,0 +1,25 @@
+id: traceql-checkout-p99-by-service
+category: tempo_query
+tags:
+- traceql
+- metrics
+- quantile
+- latency
+- checkout
+statement: |
+  Checkout on POST /api/orders has been dragging. For those slow requests, which backend's own
+  request-handling tail looks worst at p99 - the latency of the work the service does for that
+  route, not just short nested spans - and what number does the telemetry show?
+rubric:
+- criterion: The final response states Order-service p99 latency accurately.
+  weight: 55
+  fact:
+    kind: query
+    backend: prometheus
+    query: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job="order-service"}[6h])) by (le))
+- criterion: The final response states which service had the worst tail latency in the comparison
+  weight: 15.0
+- criterion: Satisfied if **either** (a) the final response cites numeric tail latency from the investigation (p95, p99, histogram quantile, or similar), **or** (b) it cites concrete span durations from trace data in the transcript - each tied to which service was worst at tails
+  weight: 15.0
+- criterion: The final response ties the analysis to checkout by naming POST /api/orders, /api/orders, or checkout
+  weight: 25.0

@@ -1,0 +1,33 @@
+id: cache-rollout-trigger-check
+category: investigation
+tags:
+- investigation
+- cache
+- deployment
+- logs
+- causality
+statement: |
+  I want a quick causal check on the earlier user-service cache incident: did the user-service v2.5.0
+  rollout actually look like the trigger for the cache-refresh warnings, or do the logs make that
+  look weak? Use the deployment logs and the cache warning logs around that incident window and give
+  me the most defensible answer, not just a hunch.
+checks: []
+rubric:
+- criterion: The final response reflects that user-service v2.5.0 deployment evidence is present in the relevant incident window, rather than claiming the logs show no rollout evidence.
+  weight: 30
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({job="user-service",level="info"} | json | __error__="" | event="deployment" [12h]))
+- criterion: The final response reflects that auth-cache-refresh warnings are present in the relevant incident window and substantial enough to support the causal discussion, rather than claiming the warning evidence is missing.
+  weight: 30
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({job="user-service",level="warn"} | json | __error__="" | job_name="auth-cache-refresh" [12h]))
+- criterion: The final response identifies the `user-service v2.5.0` rollout as the relevant deployment event and frames it as a plausible trigger for the cache warnings rather than saying the logs show no deployment tie-in
+  weight: 15
+- criterion: The final response ties the causal claim to both the deployment evidence and the subsequent cache-refresh warning pattern, not only one of them
+  weight: 15
+- criterion: The response keeps the scope on the user-service cache incident rather than drifting into the separate payment/order incident narratives
+  weight: 10

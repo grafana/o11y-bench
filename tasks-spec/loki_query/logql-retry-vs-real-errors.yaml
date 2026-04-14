@@ -1,0 +1,40 @@
+id: logql-retry-vs-real-errors
+category: loki_query
+tags:
+- logql
+- logs
+- retries
+- errors
+- triage
+statement: |
+  Order flow has been flaky lately. Does that sound like mostly harmless retry chatter, or real
+  backend failures underneath - which narrative is louder in the logs? Give rough counts from the
+  last ~6 hours (retry-style warnings vs error-level failures) so the comparison is grounded, not just vibes.
+  Checkout and payments are the sensitive part - if you split by service, **order-service** and
+  **payment-service** are the ones to weigh first.
+checks: []
+rubric:
+- criterion: Retry-style warn lines match Loki (6h)
+  weight: 35
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({job=~"order-service|payment-service", level="warn"} |~ "(?i)retry" [6h]))
+- criterion: Error-level log lines match Loki (6h)
+  weight: 35
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({job=~"order-service|payment-service", level="error"}[6h]))
+- criterion: The final response states whether retry-style log noise is present and describes what those lines look like
+  weight: 15.0
+- criterion: The final response names at least one concrete backend failure signature (database timeout, HTTP 500, HTTP 502, or similar) separate from retries
+  weight: 15.0
+- criterion: The final response explains how retry chatter differs from hard failures in the logs
+  weight: 10.0
+- criterion: The final response states whether retries or hard failures dominate the incident picture
+  weight: 10.0
+- criterion: The response contrasts retries vs real failures
+  weight: 30.0
+- criterion: The answer distinguishes retry warnings from hard request failures rather than collapsing them into one bucket
+  weight: 15.0

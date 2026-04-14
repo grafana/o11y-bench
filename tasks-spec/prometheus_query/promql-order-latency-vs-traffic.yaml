@@ -1,0 +1,30 @@
+id: promql-order-latency-vs-traffic
+category: prometheus_query
+tags:
+- promql
+- histogram
+- traffic
+- comparison
+- investigation
+statement: |
+  Order-service feels slow. Looking at the last 1h only, is that mainly traffic volume or are
+  requests just slower per request? Give me the current request rate and the current p95 latency,
+  then your read.
+checks: []
+rubric:
+- criterion: The final response states current order-service traffic rate accurately.
+  weight: 30
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum(rate(http_requests_total{job="order-service"}[5m]))
+- criterion: The final response states current order-service p95 latency accurately.
+  weight: 30
+  fact:
+    kind: query
+    backend: prometheus
+    query: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="order-service"}[5m])) by (le))
+- criterion: The final response weighs both traffic volume and latency evidence when explaining the slowdown
+  weight: 10.0
+- criterion: The response concludes the slowdown is driven more by per-request latency than by unusually high traffic
+  weight: 40.0

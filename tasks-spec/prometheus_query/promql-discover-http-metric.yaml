@@ -1,0 +1,27 @@
+id: promql-discover-http-metric
+category: prometheus_query
+tags:
+- promql
+- discovery
+- metrics
+- labels
+statement: |
+  I'm writing a traffic-by-service chart for **user-service**, **order-service**, and **payment-service**.
+  In this environment those three backends are the ones that emit `http_requests_total` for API traffic - webapp
+  and api-gateway don't carry that counter on the scrape.
+  What metric and label should I use to break volume down by service here?
+
+  Once you've chosen them, run an aggregate requests-per-second query in Prometheus for all HTTP
+  traffic on that metric (scoped to those backends) as of the current time shown above, and
+  include that numeric total (req/s) in your answer so I can sanity-check chart scale.
+rubric:
+- criterion: The final response states Aggregate HTTP request rate accurately.
+  weight: 40
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum(rate(http_requests_total{job=~"user-service|order-service|payment-service"}[5m]))
+- criterion: The response names http_requests_total
+  weight: 25.0
+- criterion: The response names the job label
+  weight: 20.0

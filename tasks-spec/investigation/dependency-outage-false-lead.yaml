@@ -1,0 +1,33 @@
+id: dependency-outage-false-lead
+category: investigation
+tags:
+- incident
+- dependency
+- logs
+- traces
+- root-cause
+statement: |
+  During order failures we're seeing 500s at the api-gateway. Is the gateway itself the problem,
+  or is something behind it failing and this is just how it shows up to users? Ground what you say
+  in roughly the last several hours of telemetry. If trace search informed your take, mention one
+  trace id you actually saw (any prefix length you are comfortable sharing is fine).
+checks: []
+rubric:
+- criterion: Error-ish logs mentioning gateway or 5xx match Loki (6h)
+  weight: 25
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({job=~".+"} |~ "(?i)(api-gateway|500|502)" [6h]))
+- criterion: The final response identifies which backend service or layer failed first and explains why api-gateway errors are downstream of that failure
+  weight: 15.0
+- criterion: If the final response relies on traces or cites a trace id, that trace-based support is consistent with tool output in the transcript rather than invented
+  weight: 20.0
+- criterion: The response names api-gateway and at least one concrete fleet backend service (order-service, payment-service, or user-service), not only generic wording like downstream or backend
+  weight: 20.0
+- criterion: The final response cites an HTTP 5xx-style error code or an ISO-8601-style timestamp
+  weight: 10.0
+- criterion: The response frames gateway errors as downstream of a backend or upstream failure (in this sim, span errors originate at target services)
+  weight: 10.0
+- criterion: The response does not treat api-gateway as the sole primary defect without citing downstream or relay evidence when the story is backend-driven
+  weight: 15.0

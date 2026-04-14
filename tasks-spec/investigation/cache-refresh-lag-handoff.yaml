@@ -1,0 +1,29 @@
+id: cache-refresh-lag-handoff
+category: investigation
+tags:
+- investigation
+- promql
+- logql
+- deployment
+- cache
+- latency
+statement: |
+  Earlier we had user-profile complaints that did not look like the payments incident. Using the
+  telemetry around that earlier cache-refresh problem, tell me which service owned it, about how
+  high the cache refresh lag got, whether GET /api/users latency was spiking at the same time, and
+  which deployment immediately preceded the issue. I need to know if this was a request-path outage
+  or a lagging background refresh problem.
+checks: []
+rubric:
+- criterion: The final response states Peak cache refresh lag roughly accurately.
+  weight: 35
+  fact:
+    kind: query
+    backend: prometheus
+    query: max_over_time(service_cache_refresh_lag_seconds{job="user-service"}[12h])
+- criterion: The final response identifies `user-service` as the owner of the incident and frames it as a lagging cache-refresh problem rather than a payments-path outage
+  weight: 20
+- criterion: The final response addresses whether GET `/api/users` latency was affected during the cache-refresh incident, and if so distinguishes modest or brief elevation from a sustained request-path outage instead of treating the issue as log-only background noise
+  weight: 20
+- criterion: The final response identifies the immediately preceding deployment as a `user-service` rollout to `v2.5.0`
+  weight: 25

@@ -1,0 +1,8 @@
+# o11y-bench: Prometheus loads TSDB blocks produced by o11y_stack.generate_data (promtool import).
+# No live scrape targets — an empty or missing sidecar exporter would add non-reproducible
+# `up` series and skew instant queries against the frozen synthetic dataset.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs: []

@@ -1,0 +1,33 @@
+id: promql-offset-traffic-compare
+category: prometheus_query
+tags:
+- promql
+- offset
+- rate
+- temporal-comparison
+statement: |
+  Has traffic to order-service changed compared to an hour ago?
+  Report the current and previous request rates and whether traffic went up or down.
+rubric:
+- criterion: The final response states Current order-service request rate accurately.
+  weight: 35
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum(rate(http_requests_total{job="order-service"}[5m]))
+- criterion: The final response states Order-service rate ~1h ago accurately.
+  weight: 35
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum(rate(http_requests_total{job="order-service"}[5m] offset 1h))
+- criterion: The transcript shows PromQL or described queries using rate(), irate(), or increase() for request volume
+  weight: 10.0
+- criterion: The transcript shows comparison of order-service traffic now to traffic from about one hour earlier (offset, time shift, or two explicit time windows)
+  weight: 5.0
+- criterion: The final response states numeric current and prior request rates (or throughput) for order-service
+  weight: 10.0
+- criterion: The final response states explicitly whether traffic went up, went down, or stayed flat compared to the earlier window
+  weight: 20.0
+- criterion: The response references order-service traffic
+  weight: 15.0

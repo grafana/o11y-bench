@@ -1,0 +1,21 @@
+id: trace-error-analysis
+category: tempo_query
+tags:
+- traces
+- tempo
+- errors
+- analysis
+statement: |
+  Over roughly the last day, are we seeing failed or errored traces anywhere? Which services look
+  bad? If you find a concrete example, include a trace id. If not, just say you didn't find one.
+checks: []
+rubric:
+- criterion: The final response correctly states whether failed or errored traces are visible in Tempo over the requested window
+  weight: 75
+  fact:
+    kind: query
+    backend: tempo
+    query: '{ span:status = error }'
+    limit: 5
+- criterion: The response analyzes what the trace data shows, even if that means explicitly saying no errored traces were found
+  weight: 25.0

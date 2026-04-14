@@ -1,0 +1,66 @@
+id: search-dashboards
+category: grafana_api
+tags:
+- grafana
+- dashboards
+- api
+- summary
+setup_dashboards:
+- uid: svc-overview
+  title: Service Overview
+  panels:
+  - id: 1
+    title: Request Rate
+    type: timeseries
+    gridPos:
+      h: 8
+      w: 12
+      x: 0
+      y: 0
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: rate(http_requests_total[5m])
+      refId: A
+  - id: 2
+    title: Error Rate
+    type: stat
+    gridPos:
+      h: 8
+      w: 12
+      x: 12
+      y: 0
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))
+      refId: A
+statement: |
+  What's on the "Service Overview" dashboard (`svc-overview`)? How many panels are there,
+  what are they called, and what Grafana panel type is each one using right now?
+checks:
+- weight: 30
+  type: state
+  params:
+    uid: svc-overview
+    mode: dashboard_state
+    panel_count: 2
+    panels:
+    - title: Request Rate
+      type: timeseries
+      datasource_type: prometheus
+    - title: Error Rate
+      type: stat
+      datasource_type: prometheus
+  name: Service Overview exists in Grafana with the expected saved panel structure
+rubric:
+- criterion: The final response accurately reports the saved panel count and pairs each saved panel title with its saved Grafana panel type
+  weight: 50.0
+  fact:
+    kind: resource
+    resource: dashboard
+    uid: svc-overview
+- criterion: The response is easy to scan and clearly pairs each panel title with its panel type
+  weight: 20.0

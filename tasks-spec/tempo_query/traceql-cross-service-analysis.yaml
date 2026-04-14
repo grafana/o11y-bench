@@ -1,0 +1,35 @@
+id: traceql-cross-service-analysis
+category: tempo_query
+tags:
+- traceql
+- traces
+- cross-service
+- latency
+- rca
+statement: |
+  Slow checkout: I'm focused on POST /api/orders taking over a second end-to-end. When you
+  dig into those slow requests, which service is eating the time? Does the same hotspot show up
+  across several slow examples or is it all over the place? Include a trace id for one concrete
+  slow example.
+checks:
+- weight: 45
+  type: grounding
+  params:
+    prefix_min_chars: 8
+    mode: tool_trace_id
+    additional_tool_names:
+    - query_loki_logs
+  name: Response cites a trace ID that appears in tool results
+rubric:
+- criterion: The final response identifies the single largest latency contributor using span durations or timings from trace data
+  weight: 10.0
+- criterion: The final response states whether that hotspot appears on most slow traces or only some of them
+  weight: 10.0
+- criterion: The response names order-service (handles POST /api/orders in the bench)
+  weight: 15.0
+- criterion: The response names at least one other concrete service or hop from the slow path besides order-service
+  weight: 15.0
+- criterion: The response discusses cross-service interaction
+  weight: 25.0
+- criterion: Any named latency bottleneck in the final answer is supported by trace spans or timings in the transcript
+  weight: 15.0

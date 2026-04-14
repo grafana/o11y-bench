@@ -1,0 +1,38 @@
+id: incident-triage
+category: investigation
+tags:
+- incident
+- triage
+- metrics
+- logs
+- multi-service
+statement: |
+  We had a noisy incident window a few hours ago - error rates jumped across several services.
+  Give me a tight triage grounded in what Prometheus metrics and Loki logs show for the last
+  several hours (not just a hunch): who was hit, when it started to look bad, whether the
+  failures look related - including whether one service looks primary versus knock-on elsewhere -
+  and what you'd do next. Where Prometheus allows, include an approximate combined 5xx share
+  of traffic for **payment-service** and **order-service** together over that ~6h window (not
+  only per-chart peaks), and tie log evidence to the same period.
+checks: []
+rubric:
+- criterion: The final response states Payment + order 5xx share accurately.
+  weight: 30
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum(rate(http_requests_total{status=~"5..",job=~"payment-service|order-service"}[6h])) / sum(rate(http_requests_total{job=~"payment-service|order-service"}[6h]))
+- criterion: The final response names payment-service and order-service as the backend jobs that still show 6h HTTP 5xx activity, consistent with the transcript's Prometheus evidence
+  weight: 25.0
+- criterion: The final response ties impacted services to evidence from logs and to evidence from metrics (error rates, 5xx, or availability) - answer YES if both appear in the argument, even with different wording than these examples
+  weight: 15.0
+- criterion: The final response distinguishes which services look primarily affected versus secondary or knock-on effects, OR states clearly if that separation is unclear from the data
+  weight: 10.0
+- criterion: 'The response names payment-service (bench data: primary error spike during the incident window)'
+  weight: 12.0
+- criterion: 'The response names order-service (bench data: elevated cascading errors during the same window)'
+  weight: 13.0
+- criterion: The response cites a coarse timestamp
+  weight: 15.0
+- criterion: Recommended next steps appear only after the transcript shows queries or pulls from metrics, logs, or traces
+  weight: 15.0

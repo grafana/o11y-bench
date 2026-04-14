@@ -1,0 +1,110 @@
+id: dashboard-create-cache-incident-review
+category: dashboarding
+tags:
+- dashboard
+- grafana
+- create
+- cache
+- prometheus
+- loki
+statement: |
+  Could you create a saved Grafana dashboard titled exactly "Cache Incident Review" so on-call can
+  review the earlier user-service cache-refresh incident in one place? It should include a stat
+  panel titled exactly "Peak Cache Refresh Lag", a timeseries panel titled exactly "Cache Refresh
+  Lag", a timeseries panel titled exactly "User P95 Latency", and a logs panel titled exactly
+  "Cache Refresh Warnings" for the user-service `auth-cache-refresh` warnings. Also add a Loki
+  deployment annotation so the user-service v2.5.0 rollout marker shows up on the graphs.
+checks:
+- weight: 35
+  type: state
+  params:
+    title: Cache Incident Review
+    mode: dashboard_state
+    panel_count: 4
+    panels:
+    - title: Peak Cache Refresh Lag
+      type: stat
+      datasource_type: prometheus
+    - title: Cache Refresh Lag
+      type: timeseries
+      datasource_type: prometheus
+    - title: User P95 Latency
+      type: timeseries
+      datasource_type: prometheus
+    - title: Cache Refresh Warnings
+      type: logs
+      datasource_type: loki
+  name: Cache Incident Review exists with the expected panel layout and datasource mix
+- weight: 35
+  type: state
+  params:
+    title: Cache Incident Review
+    mode: dashboard_state
+    panels:
+    - title: Peak Cache Refresh Lag
+      type: stat
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_scalar
+        canonical_query: max_over_time(service_cache_refresh_lag_seconds{job="user-service"}[$__range])
+    - title: Cache Refresh Lag
+      type: timeseries
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_vector
+        canonical_query: service_cache_refresh_lag_seconds{job="user-service"}
+        distinct_label_values:
+        - name: job
+          values_exact:
+          - user-service
+    - title: User P95 Latency
+      type: timeseries
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_vector
+        canonical_query: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="user-service"}[5m])) by (le))
+  name: Cache Incident Review uses the expected user-service cache and latency queries
+- weight: 20
+  type: state
+  params:
+    title: Cache Incident Review
+    mode: dashboard_state
+    panels:
+    - title: Cache Refresh Warnings
+      type: logs
+      datasource_type: loki
+      execute_cases:
+      - result_kind: loki_streams
+        lookback_sec: 86400
+        json_field_matchers:
+        - field: job_name
+          value_any_of:
+          - auth-cache-refresh
+        distinct_label_values:
+        - source: stream
+          name: job
+          values_exact:
+          - user-service
+    annotations:
+    - datasource_type: loki
+      enabled: true
+      execute_cases:
+      - result_kind: loki_streams
+        lookback_sec: 86400
+        required_json_fields:
+        - service
+        - version
+        - message
+        json_field_matchers:
+        - field: event
+          value_any_of:
+          - deployment
+        distinct_label_values:
+        - source: json
+          name: service
+          values_exact:
+          - user-service
+  name: Cache Incident Review includes the expected warning-log panel and deployment annotation
+rubric:
+- criterion: The final response summarizes the dashboard as a focused review board for the user-service cache incident and does not claim unsupported extra panels or variables
+  weight: 10

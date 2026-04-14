@@ -1,0 +1,29 @@
+id: logql-parse-json-logs
+category: loki_query
+tags:
+- logql
+- logs
+- json
+- parsing
+- pipeline
+statement: |
+  Find HTTP 5xx request logs from the last 24 hours. Lines are JSON with structured fields such
+  as `status` and `service`. Give a few concrete examples with the numeric status codes and which
+  services they came from, and say roughly how many matching request lines there were in that
+  window.
+checks: []
+rubric:
+- criterion: The final response states Count of JSON-parsed 5xx request logs accurately.
+  weight: 65
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({service=~".+"} | json | __error__="" | path=~".+" | status >= 500 [24h]))
+- criterion: The transcript shows Loki/LogQL exploration that uses JSON-aware filtering (for example a json stage or extracted labels such as status or service) before stating conclusions
+  weight: 20.0
+- criterion: The final response gives specific examples (named services and failure statuses), not only vague claims
+  weight: 20.0
+- criterion: The final response references JSON parsing, structured fields, or LogQL pipeline stages on log lines
+  weight: 20.0
+- criterion: The final response mentions HTTP 5xx or concrete 5xx-style status codes
+  weight: 15.0

@@ -1,0 +1,37 @@
+id: promql-cache-lag-vs-user-latency
+category: prometheus_query
+tags:
+- promql
+- metrics
+- cache
+- latency
+- user-service
+statement: |
+  I want the metric correlation for the earlier user-service cache incident. Over roughly the last 12
+  hours, tell me how high the cache refresh lag got, how high GET /api/users p95 latency got during
+  that same incident window, and whether both signals are back near normal by the end of the window
+  or if one still looks elevated.
+checks: []
+rubric:
+- criterion: The final response states the peak cache refresh lag roughly accurately.
+  weight: 30
+  fact:
+    kind: query
+    backend: prometheus
+    query: max_over_time(service_cache_refresh_lag_seconds{job="user-service"}[12h])
+- criterion: The final response states the peak user-service p95 latency roughly accurately.
+  weight: 35
+  fact:
+    kind: query
+    backend: prometheus
+    query: max_over_time(histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="user-service"}[5m])) by (le))[12h:1m])
+- criterion: The final response states Current cache refresh lag accurately.
+  weight: 15
+  fact:
+    kind: query
+    backend: prometheus
+    query: service_cache_refresh_lag_seconds{job="user-service"}
+- criterion: The final response clearly distinguishes the cache lag peak from the p95 latency peak instead of collapsing them into one symptom
+  weight: 10
+- criterion: The final response correctly states whether both signals are back near normal by the end of the window, or whether one still remains elevated
+  weight: 10

@@ -1,0 +1,140 @@
+id: dashboard-add-cache-lag-panels
+category: dashboarding
+tags:
+- dashboard
+- grafana
+- update
+- cache
+- prometheus
+- loki
+setup_dashboards:
+- uid: user-access-overview
+  title: User Access Overview
+  panels:
+  - id: 1
+    title: User Request Rate
+    type: timeseries
+    gridPos:
+      h: 8
+      w: 12
+      x: 0
+      y: 0
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: sum(rate(http_requests_total{job="user-service"}[5m]))
+      refId: A
+  - id: 2
+    title: User P95 Latency
+    type: timeseries
+    gridPos:
+      h: 8
+      w: 12
+      x: 12
+      y: 0
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="user-service"}[5m])) by (le))
+      refId: A
+statement: |
+  On-call needs the saved "User Access Overview" dashboard (`user-access-overview`) to make the new
+  cache-refresh incident obvious. Keep the existing user request-rate and latency panels, then add a
+  stat panel titled exactly "Peak Cache Refresh Lag" that shows the user-service peak lag over the
+  current dashboard time range, a timeseries panel titled exactly "Cache Refresh Lag" for that lag
+  over time, and a logs panel titled exactly "Cache Refresh Warnings" filtered to the auth-cache-
+  refresh warning lines. Also add a saved Loki dashboard annotation query so the user-service
+  rollout to v2.5.0 shows up on the graphs.
+checks:
+- weight: 35
+  type: state
+  params:
+    uid: user-access-overview
+    mode: dashboard_state
+    panel_count: 5
+    panels:
+    - title: User Request Rate
+      type: timeseries
+      datasource_type: prometheus
+    - title: User P95 Latency
+      type: timeseries
+      datasource_type: prometheus
+    - title: Peak Cache Refresh Lag
+      type: stat
+      datasource_type: prometheus
+    - title: Cache Refresh Lag
+      type: timeseries
+      datasource_type: prometheus
+    - title: Cache Refresh Warnings
+      type: logs
+      datasource_type: loki
+  name: User Access Overview keeps the seeded user panels and adds the requested cache incident panels
+- weight: 35
+  type: state
+  params:
+    uid: user-access-overview
+    mode: dashboard_state
+    panels:
+    - title: Peak Cache Refresh Lag
+      type: stat
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_scalar
+        canonical_query: max_over_time(service_cache_refresh_lag_seconds{job="user-service"}[$__range])
+    - title: Cache Refresh Lag
+      type: timeseries
+      datasource_type: prometheus
+      execute_cases:
+      - result_kind: prometheus_vector
+        canonical_query: service_cache_refresh_lag_seconds{job="user-service"}
+        distinct_label_values:
+        - name: job
+          values_exact:
+          - user-service
+  name: Cache lag panels use the saved user-service cache lag metric over the dashboard time range
+- weight: 20
+  type: state
+  params:
+    uid: user-access-overview
+    mode: dashboard_state
+    panels:
+    - title: Cache Refresh Warnings
+      type: logs
+      datasource_type: loki
+      execute_cases:
+      - result_kind: loki_streams
+        lookback_sec: 86400
+        json_field_matchers:
+        - field: job_name
+          value_any_of:
+          - auth-cache-refresh
+        distinct_label_values:
+        - source: stream
+          name: job
+          values_exact:
+          - user-service
+    annotations:
+    - datasource_type: loki
+      enabled: true
+      execute_cases:
+      - result_kind: loki_streams
+        lookback_sec: 86400
+        required_json_fields:
+        - service
+        - version
+        - message
+        json_field_matchers:
+        - field: event
+          value_any_of:
+          - deployment
+        distinct_label_values:
+        - source: json
+          name: service
+          values_exact:
+          - user-service
+  name: Cache Refresh Warnings and the deployment annotation use the expected user-service Loki signals
+rubric:
+- criterion: The final response explains that the saved dashboard now surfaces peak cache lag, lag over time, cache refresh warning logs, and the user-service deployment marker without claiming unrelated board changes
+  weight: 10

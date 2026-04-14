@@ -1,0 +1,33 @@
+id: logql-cache-refresh-peak-lag
+category: loki_query
+tags:
+- logql
+- logs
+- cache
+- unwrap
+- user-service
+statement: |
+  For the earlier user-service cache incident, I want the warning-log view rather than Prometheus.
+  From the cache refresh warning logs over roughly the last 12 hours, tell me how high `lag_seconds`
+  got, about how many `stale_keys` were attached to that worst lag record, and whether those warnings
+  look like one recurring background job or a mixed bag of unrelated user-service warnings.
+checks: []
+rubric:
+- criterion: Peak cache refresh lag from Loki warning logs matches the unwrapped log value over the last 12h
+  weight: 35
+  fact:
+    kind: query
+    backend: loki
+    query: max(max_over_time({job="user-service",level="warn"} | json | __error__="" | job_name="auth-cache-refresh" | unwrap lag_seconds [12h]))
+- criterion: Peak stale key count from Loki warning logs matches the unwrapped log value over the last 12h
+  weight: 35
+  fact:
+    kind: query
+    backend: loki
+    query: max(max_over_time({job="user-service",level="warn"} | json | __error__="" | job_name="auth-cache-refresh" | unwrap stale_keys [12h]))
+- criterion: The final response identifies `auth-cache-refresh` as one recurring background job rather than a mixed bag of unrelated warnings
+  weight: 10
+- criterion: The final response names `user-service` and reports both the peak lag and the associated stale-key scale as separate values
+  weight: 10
+- criterion: The response frames the evidence as coming from cache refresh warning logs rather than generic service logs or metrics
+  weight: 10

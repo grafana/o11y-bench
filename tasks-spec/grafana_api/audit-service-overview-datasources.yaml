@@ -1,0 +1,83 @@
+id: audit-service-overview-datasources
+category: grafana_api
+tags:
+- grafana
+- dashboard
+- datasources
+- audit
+setup_dashboards:
+- uid: service-overview-audit
+  title: Service Overview Audit
+  panels:
+  - id: 1
+    title: Request Rate
+    type: timeseries
+    gridPos:
+      h: 8
+      w: 12
+      x: 0
+      y: 0
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: sum(rate(http_requests_total[5m]))
+      refId: A
+  - id: 2
+    title: Error Logs
+    type: logs
+    gridPos:
+      h: 8
+      w: 12
+      x: 12
+      y: 0
+    datasource:
+      type: loki
+      uid: loki
+    targets:
+    - expr: '{job=~"payment-service|order-service"} | json | status >= 500'
+      refId: A
+  - id: 3
+    title: P95 Latency
+    type: stat
+    gridPos:
+      h: 8
+      w: 24
+      x: 0
+      y: 8
+    datasource:
+      type: prometheus
+      uid: prometheus
+    targets:
+    - expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="order-service"}[5m])) by (le))
+      refId: A
+statement: |
+  Can you audit the saved "Service Overview Audit" dashboard (`service-overview-audit`) for me?
+  I just want a quick panel-by-panel map of which datasource each panel is using.
+checks:
+- weight: 30
+  type: state
+  params:
+    uid: service-overview-audit
+    mode: dashboard_state
+    panel_count: 3
+    panels:
+    - title: Request Rate
+      type: timeseries
+      datasource_type: prometheus
+    - title: Error Logs
+      type: logs
+      datasource_type: loki
+    - title: P95 Latency
+      type: stat
+      datasource_type: prometheus
+  name: Service Overview Audit exists with the expected datasource mix
+rubric:
+- criterion: The final response accurately gives a panel-by-panel mapping from panel title to datasource type
+  weight: 50
+  fact:
+    kind: resource
+    resource: dashboard
+    uid: service-overview-audit
+- criterion: The response distinguishes the Loki logs panel from the Prometheus metric panels rather than listing one flat datasource summary
+  weight: 20

@@ -1,0 +1,23 @@
+id: logql-deployment-rollout-events
+category: loki_query
+tags:
+- logql
+- json
+- deployments
+- events
+statement: |
+  We think a v2.5.0 rollout landed within roughly the last day, shortly before things went sideways. Which services logged that deployment, and about when?
+checks: []
+rubric:
+- criterion: The final response states Count of v2.5.0 deployment log lines accurately.
+  weight: 45
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({job=~".+"} |= "v2.5.0" |= "deployment" [24h]))
+- criterion: The final response names both order-service and payment-service as the services in the v2.5.0 rollout
+  weight: 30.0
+- criterion: The final response discusses the rollout using deploy, rollout, release, or version wording
+  weight: 20.0
+- criterion: The response includes the approximate deployment time, or a close relative time, tied to the rollout itself rather than only the search window
+  weight: 20.0

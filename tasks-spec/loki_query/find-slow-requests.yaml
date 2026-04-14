@@ -1,0 +1,23 @@
+id: find-slow-requests
+category: loki_query
+tags:
+- logql
+- logs
+- latency
+- performance
+statement: |
+  Over the last six hours, are our HTTP request logs showing a really slow outlier? If so, which request or route is it, and roughly how slow did it get?
+checks: []
+rubric:
+- criterion: The final response states Slow-request signal accurately.
+  weight: 55
+  fact:
+    kind: query
+    backend: loki
+    query: max(max_over_time({job=~".+"} | json | unwrap duration_ms | __error__="" [6h]))
+- criterion: The final response names the slowest affected route or service and states how slow it got using concrete durations or latency figures
+  weight: 10.0
+- criterion: The response cites concrete request latency (for example a max or typical slow duration in milliseconds or seconds), not only how long the search window was
+  weight: 25.0
+- criterion: The response references an HTTP path
+  weight: 20.0

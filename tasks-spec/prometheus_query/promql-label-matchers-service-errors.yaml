@@ -1,0 +1,22 @@
+id: promql-label-matchers-service-errors
+category: prometheus_query
+tags:
+- promql
+- label-matchers
+- regex
+- increase
+- 24h
+- http-errors
+statement: |
+  From Prometheus, which backend ``job`` labels matching ``*-service`` recorded any HTTP 5xx in
+  the last 24 hours? List the exact backend ``job`` names that had 5xx in that window.
+checks: []
+rubric:
+- criterion: Final response lists the exact backend *-service jobs with 24h HTTP 5xx activity, matching Prometheus
+  weight: 75
+  fact:
+    kind: query
+    backend: prometheus
+    query: sum by (job) (increase(http_requests_total{status=~"5..",job=~".+-service"}[24h])) > 0
+- criterion: The transcript shows a 24h Prometheus check scoped to backend *-service jobs rather than broad generic error checking or edge-only targets
+  weight: 25

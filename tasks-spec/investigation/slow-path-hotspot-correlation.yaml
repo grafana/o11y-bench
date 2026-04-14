@@ -1,0 +1,43 @@
+id: slow-path-hotspot-correlation
+category: investigation
+tags:
+- investigation
+- logql
+- traceql
+- latency
+- path
+- hotspot
+statement: |
+  Some requests have been noticeably slow, and I need something tighter than "latency was up."
+  Using roughly the last six hours of telemetry, tell me which HTTP path owns the most request logs
+  over 1 second, about how many such slow requests it generated, and roughly what share of all >1s
+  request logs that path represents. Then use traces for that same path to tell me whether the same
+  latency hotspot keeps recurring across several slow examples or if the slowness is spread around.
+  Name the service and operation that are actually eating the time, and include one trace id you
+  really saw.
+checks:
+- weight: 20
+  type: grounding
+  params:
+    prefix_min_chars: 8
+    mode: tool_trace_id
+  name: Response cites a trace ID that appears in Tempo tool results
+rubric:
+- criterion: The final response states Slow-request count for the dominant slow path accurately.
+  weight: 30
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({job=~".+"} | json | __error__="" | path="/api/products" | duration_ms >= 1000 [6h]))
+- criterion: The final response states Dominant slow-path share of all >1s request logs accurately.
+  weight: 25
+  fact:
+    kind: query
+    backend: loki
+    query: sum(count_over_time({job=~".+"} | json | __error__="" | path="/api/products" | duration_ms >= 1000 [6h])) / sum(count_over_time({job=~".+"} | json | __error__="" | duration_ms >= 1000 [6h]))
+- criterion: The final response identifies `/api/products` as the path contributing the most >1s request logs in the window and ties that ranking to log evidence rather than generic latency wording
+  weight: 10
+- criterion: The final response states whether one recurring hotspot shows up across several slow traces or whether the slowness is spread around
+  weight: 5
+- criterion: The final response identifies `order-service` and `handle GET /api/products` as the main latency hotspot rather than stopping at an upstream relay span like webapp or api-gateway
+  weight: 10
