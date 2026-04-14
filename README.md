@@ -1,5 +1,21 @@
 # o11y-bench
 
+[![Leaderboard](https://img.shields.io/badge/Leaderboard-o11ybench.ai-blue)](https://o11ybench.ai/)
+[![Tasks Explorer](https://img.shields.io/badge/Tasks_Explorer-Browse_Tasks-green)](https://o11ybench.ai/tasks/)
+[![Harbor Docs](https://img.shields.io/badge/Harbor-Docs-orange)](https://www.harborframework.com/docs)
+[![Submit Results](https://img.shields.io/badge/Submit_Results-Hugging_Face-yellow)](https://huggingface.co/datasets/grafanalabs/o11y-bench-leaderboard)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-red.svg)](./LICENSE)
+
+---
+
+- [Quick Start](#quick-start)
+- [Running A Single Job](#running-a-single-job)
+- [Running With Different Agents](#running-with-different-agents)
+- [Running Your Own Models](#running-your-own-models)
+- [Submitting Results To The Leaderboard](#submitting-results-to-the-leaderboard)
+
+---
+
 `o11y-bench` is an open benchmark for evaluating LLM agents on observability and SRE tasks.
 It is built on top of [Harbor](https://harborframework.com) and runs agents against a real
 Grafana stack with Prometheus, Loki, and Tempo.
@@ -28,7 +44,7 @@ At a high level, a benchmark run does the following:
 5. Writes job artifacts and HTML reports under `jobs/`
 
 The default agent lives in `agents/o11y_agent.py`, but you can also run Harbor built-in agents or
-your own custom Harbor agent class by import path.
+your own custom Harbor agent class by import path. See the [Harbor agent docs](https://www.harborframework.com/docs/agents) for more on agent types.
 
 Each run also persists one scenario clock in `scenario_time.txt` under the job or suite directory.
 That keeps reruns and regrades aligned to the same synthetic data window.
@@ -37,9 +53,9 @@ That keeps reruns and regrades aligned to the same synthetic data window.
 
 You need all of the following installed locally:
 
-- `mise`
-- `uv`
-- Docker
+- [`mise`](https://mise.jdx.dev/)
+- [`uv`](https://docs.astral.sh/uv/)
+- [Docker](https://docs.docker.com/get-docker/)
 
 You also need model-provider API keys in your environment.
 
@@ -47,11 +63,11 @@ Minimum environment variables:
 
 - `ANTHROPIC_API_KEY`
   Used by the grading pipeline.
-- provider key(s) for the model you want to run
-  Examples:
+- Provider key(s) for the model you want to run:
   - `OPENAI_API_KEY`
   - `ANTHROPIC_API_KEY`
   - `GOOGLE_API_KEY` or `GEMINI_API_KEY`
+  - `OPENROUTER_API_KEY` — run any model available on [OpenRouter](https://openrouter.ai/)
 
 Optional environment variables:
 
@@ -101,6 +117,8 @@ If you want a quiet version of the same command:
 ```bash
 mise run bench:job:quiet -- --model openai/gpt-5.4-nano --task-name query-cpu-metrics --n-concurrent 1
 ```
+
+Browse all available tasks on the [Tasks Explorer](https://o11ybench.ai/tasks/) or see how models compare on the [Leaderboard](https://o11ybench.ai/).
 
 ## Setup Details
 
@@ -178,7 +196,7 @@ mise run bench:job -- --model openai/gpt-5.4-nano --task-name query-cpu-metrics
 
 ### Harbor Built-In Agent
 
-You can switch to a Harbor built-in agent with `--agent`:
+You can switch to a [Harbor built-in agent](https://www.harborframework.com/docs/agents) with `--agent`:
 
 ```bash
 mise run bench:job -- --model openai/gpt-5.4-nano --task-name query-cpu-metrics --agent opencode
@@ -196,6 +214,35 @@ Use either `--agent` or `--agent-import-path`, not both.
 
 The LangChain agent in this repo is intentionally a simple example of wiring a custom Harbor agent
 entrypoint through the existing benchmark flow.
+
+## Running Your Own Models
+
+If your model is reachable through Harbor and LiteLLM, pass it as `provider/model`.
+
+Examples:
+
+```bash
+mise run bench:job -- --model openai/gpt-5.4-mini
+mise run bench:job -- --model anthropic/claude-haiku-4-5-20251001
+mise run bench:job -- --model google/gemini-3-flash-preview
+```
+
+### OpenRouter Models
+
+You can run any model available on [OpenRouter](https://openrouter.ai/) by using the `openrouter/` prefix.
+Set `OPENROUTER_API_KEY` in your environment, then:
+
+```bash
+mise run bench:job -- --model openrouter/deepseek/deepseek-v3.2 --job-name openrouter-deepseek-v3-2
+```
+
+### Dry Run
+
+You can dry-run the job planner without executing Harbor:
+
+```bash
+uv run python -m o11y_bench job --model openai/gpt-5.4-nano --task-name query-cpu-metrics --dry-run
+```
 
 ## Running The Standard Suite
 
@@ -249,24 +296,6 @@ The standard suite currently covers these provider/model/reasoning combinations:
 The suite uses the default repo agent.
 If you want to benchmark a custom agent across the same matrix, run `bench:job` variants yourself
 or extend suite orchestration in code.
-
-## Running Your Own Models
-
-If your model is reachable through Harbor and LiteLLM, pass it as `provider/model`.
-
-Examples:
-
-```bash
-mise run bench:job -- --model openai/gpt-5.4-mini
-mise run bench:job -- --model anthropic/claude-haiku-4-5-20251001
-mise run bench:job -- --model google/gemini-3-flash-preview
-```
-
-You can dry-run the job planner without executing Harbor:
-
-```bash
-uv run python -m o11y_bench job --model openai/gpt-5.4-nano --task-name query-cpu-metrics --dry-run
-```
 
 ## Reports And Artifacts
 
@@ -328,6 +357,22 @@ Compare two job directories directly:
 uv run python -m reporting.compare_report --job-dir jobs/<suite-id>/<job-a> --job-dir jobs/<suite-id>/<job-b>
 ```
 
+## Submitting Results To The Leaderboard
+
+After completing a benchmark run, you can submit your results to the
+[o11y-bench leaderboard](https://o11ybench.ai/) via the
+[Hugging Face submission repo](https://huggingface.co/datasets/grafanalabs/o11y-bench-leaderboard).
+
+To submit:
+
+1. Fork the [submission repo](https://huggingface.co/datasets/grafanalabs/o11y-bench-leaderboard)
+2. Create a branch and add your completed job directory under `submissions/o11y-bench/1.0/<agent>__<model>/`
+3. Include a `metadata.yaml` with agent and model info
+4. Open a Pull Request
+
+See the [submission repo README](https://huggingface.co/datasets/grafanalabs/o11y-bench-leaderboard) for
+the full submission structure, validation rules, and example layout.
+
 ## Common Local Commands
 
 ```bash
@@ -342,28 +387,13 @@ mise run bench:job -- --model openai/gpt-5.4-nano --task-name query-cpu-metrics 
 mise run bench:suite
 ```
 
-## Repo Layout
-
-- `tasks-spec/`
-  Source of truth for benchmark scenarios
-- `tasks/`
-  Generated Harbor task output
-- `agents/`
-  Default repo agent plus custom agent examples
-- `grading/`
-  Verifier, checks, facts, rubric judging, and scoring
-- `docker/`
-  Sidecar image and observability stack config
-- `environment/`
-  Harbor task container configuration
-- `o11y_bench/`
-  CLI, job orchestration, suite orchestration, resume, and regrade logic
-- `reporting/`
-  HTML report generation
-
 ## Notes For Contributors
 
 - Edit `tasks-spec/`, not `tasks/`
 - Regenerate tasks after task-spec changes with `mise run setup:sync`
 - Keep tests small and behavior-focused
 - Be conservative with local concurrency if Docker resources are limited
+
+## License
+
+This project is licensed under the [GNU Affero General Public License v3.0](./LICENSE).
