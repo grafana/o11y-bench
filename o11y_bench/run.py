@@ -42,7 +42,7 @@ from .resume import (
     plan_job_dir_for_resume,
     repair_job_dir_for_resume,
 )
-from .scenario_clock import bound_scenario_time, ensure_scenario_time
+from .scenario_clock import bound_scenario_time, resolve_scenario_time
 
 
 @dataclass
@@ -371,7 +371,7 @@ def regrade_job_dir(
     quiet: bool = False,
 ) -> Path | None:
     model = os.getenv("GRADING_MODEL", "claude-haiku-4-5-20251001")
-    scenario_time_iso = ensure_scenario_time(job_dir, prefer_existing=True)
+    scenario_time_iso = resolve_scenario_time()
 
     updated = 0
     trials_by_task: dict[str, list[Path]] = {}
@@ -465,10 +465,7 @@ def execute_job(spec: JobSpec, *, dry_run: bool = False, quiet: bool = False) ->
     """Single-pass: plan, repair, run harbor, finalize."""
     task_checksums = compute_task_checksums(spec.tasks_dir)
     job_dir = spec.jobs_dir / spec.job_name
-    scenario_time_iso = ensure_scenario_time(
-        job_dir,
-        default_iso=os.environ.get("O11Y_SCENARIO_TIME_ISO"),
-    )
+    scenario_time_iso = resolve_scenario_time()
     os.environ["O11Y_SCENARIO_TIME_ISO"] = scenario_time_iso
     task_names = _selected_task_names(spec)
     n_tasks = len(task_names)
@@ -587,10 +584,7 @@ def _run_provider_queue(provider: str, suite_dir: Path, opts: SuiteOpts) -> list
 def execute_suite(opts: SuiteOpts) -> None:
     """Run all STANDARD_SUITE variants with per-provider parallelism."""
     suite_dir = resolve_suite_dir(opts.jobs_dir, allow_resume=opts.resume)
-    os.environ["O11Y_SCENARIO_TIME_ISO"] = ensure_scenario_time(
-        suite_dir,
-        default_iso=os.environ.get("O11Y_SCENARIO_TIME_ISO"),
-    )
+    os.environ["O11Y_SCENARIO_TIME_ISO"] = resolve_scenario_time()
 
     print(f"Suite dir: {suite_dir}")
     print(f"Mode: {'resume' if opts.resume else 'fresh'}")

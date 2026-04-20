@@ -78,7 +78,9 @@ def test_execute_job_resumes_from_saved_config(monkeypatch, tmp_path) -> None:
     )
 
     monkeypatch.setattr(run, "compute_task_checksums", lambda tasks_dir: {})
-    monkeypatch.setattr(run, "ensure_scenario_time", lambda *args, **kwargs: "2026-04-04T12:00:00Z")
+    monkeypatch.setattr(
+        run, "resolve_scenario_time", lambda *args, **kwargs: "2026-04-04T12:00:00Z"
+    )
     monkeypatch.setattr(run, "_selected_task_names", lambda spec: ["demo-task"])
     monkeypatch.setattr(
         run,
