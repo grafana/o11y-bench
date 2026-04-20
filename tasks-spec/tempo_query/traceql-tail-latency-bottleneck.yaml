@@ -24,8 +24,10 @@ rubric:
 - criterion: The final response frames the issue as tail or high-percentile latency, not only average slowness
   weight: 5.0
 - criterion: The final response frames tail/high-percentile latency or structural trace analysis (operators, spans, or plain-language equivalent)
-  weight: 25.0
+  weight: 20.0
 - criterion: The final response discusses latency or duration with concrete timing wording
-  weight: 30.0
+  weight: 25.0
 - criterion: The final response's bottleneck explanation is supported by the cited slow trace rather than generic latency talk
+  weight: 10.0
+- criterion: The slow trace the response cites is an order-service checkout trace (e.g. `POST /api/orders` or `handle POST /api/orders`), not a trace on some unrelated path
   weight: 10.0
