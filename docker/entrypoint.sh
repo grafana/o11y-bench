@@ -23,6 +23,33 @@ TEMPO_OTLP_MAX_ATTEMPTS=$(sanitize_max_attempts "TEMPO_OTLP_MAX_ATTEMPTS" 120)
 PROMETHEUS_MAX_ATTEMPTS=$(sanitize_max_attempts "PROMETHEUS_MAX_ATTEMPTS" 120)
 GRAFANA_MAX_ATTEMPTS=$(sanitize_max_attempts "GRAFANA_MAX_ATTEMPTS" 180)
 MCP_MAX_ATTEMPTS=$(sanitize_max_attempts "MCP_MAX_ATTEMPTS" 60)
+SIDECAR_LOGS_ENABLED=${O11Y_STACK_DEBUG_LOGS:-}
+
+sidecar_logs_enabled() {
+    case "${SIDECAR_LOGS_ENABLED,,}" in
+        1|true|yes|on)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+sidecar_log_path() {
+    local name=$1
+    if sidecar_logs_enabled; then
+        printf '/logs/artifacts/sidecar/%s\n' "$name"
+        return 0
+    fi
+    printf '/dev/null\n'
+}
+
+LOKI_LOG=$(sidecar_log_path "loki.log")
+TEMPO_LOG=$(sidecar_log_path "tempo.log")
+GRAFANA_LOG=$(sidecar_log_path "grafana.log")
+PROMETHEUS_LOG=$(sidecar_log_path "prometheus.log")
+MCP_GRAFANA_LOG=$(sidecar_log_path "mcp-grafana.log")
 
 wait_for_service() {
     local url=$1
@@ -109,16 +136,20 @@ provision_task_resources() {
 
 echo "=== o11y-bench Environment ==="
 
-mkdir -p /logs/artifacts/sidecar
-ENTRYPOINT_LOG=/logs/artifacts/sidecar/entrypoint.log
-: > "$ENTRYPOINT_LOG"
-exec > >(tee "$ENTRYPOINT_LOG") 2>&1
+if sidecar_logs_enabled; then
+    mkdir -p /logs/artifacts/sidecar
+    ENTRYPOINT_LOG=/logs/artifacts/sidecar/entrypoint.log
+    : > "$ENTRYPOINT_LOG"
+    exec > >(tee "$ENTRYPOINT_LOG") 2>&1
+else
+    echo "Sidecar file logging disabled (set O11Y_STACK_DEBUG_LOGS=1 to enable)"
+fi
 
 # Start Loki, Tempo, and Grafana in parallel
 echo "Starting services..."
-/usr/local/bin/loki --config.file=/etc/loki/config.yaml > /logs/artifacts/sidecar/loki.log 2>&1 &
+/usr/local/bin/loki --config.file=/etc/loki/config.yaml > "$LOKI_LOG" 2>&1 &
 
-/usr/local/bin/tempo --config.file=/etc/tempo/tempo.yaml > /logs/artifacts/sidecar/tempo.log 2>&1 &
+/usr/local/bin/tempo --config.file=/etc/tempo/tempo.yaml > "$TEMPO_LOG" 2>&1 &
 
 GF_PATHS_PROVISIONING="/etc/grafana/provisioning" \
 GF_PATHS_PLUGINS="/var/lib/grafana/plugins" \
@@ -132,11 +163,11 @@ GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES="false" \
 /usr/share/grafana/bin/grafana-server \
     --homepath=/usr/share/grafana \
     --config=/usr/share/grafana/conf/defaults.ini \
-    > /logs/artifacts/sidecar/grafana.log 2>&1 &
+    > "$GRAFANA_LOG" 2>&1 &
 
 # Wait for Loki and Tempo (needed for data generation)
-wait_for_service "http://localhost:3100/ready" "Loki" "$LOKI_MAX_ATTEMPTS" "/logs/artifacts/sidecar/loki.log"
-wait_for_service "http://localhost:3200/ready" "Tempo" "$TEMPO_MAX_ATTEMPTS" "/logs/artifacts/sidecar/tempo.log"
+wait_for_service "http://localhost:3100/ready" "Loki" "$LOKI_MAX_ATTEMPTS" "$LOKI_LOG"
+wait_for_service "http://localhost:3200/ready" "Tempo" "$TEMPO_MAX_ATTEMPTS" "$TEMPO_LOG"
 wait_for_tempo_otlp "$TEMPO_OTLP_MAX_ATTEMPTS"
 
 # Generate telemetry data (writes /tmp/env_timestamp when done)
@@ -154,11 +185,11 @@ echo "Starting Prometheus..."
     --storage.tsdb.path=/prometheus \
     --storage.tsdb.retention.time=99y \
     --web.enable-lifecycle \
-    > /logs/artifacts/sidecar/prometheus.log 2>&1 &
+    > "$PROMETHEUS_LOG" 2>&1 &
 
 # Wait for all services
-wait_for_service "http://localhost:9090/-/ready" "Prometheus" "$PROMETHEUS_MAX_ATTEMPTS" "/logs/artifacts/sidecar/prometheus.log"
-wait_for_service "http://localhost:3000/api/health" "Grafana" "$GRAFANA_MAX_ATTEMPTS" "/logs/artifacts/sidecar/grafana.log"
+wait_for_service "http://localhost:9090/-/ready" "Prometheus" "$PROMETHEUS_MAX_ATTEMPTS" "$PROMETHEUS_LOG"
+wait_for_service "http://localhost:3000/api/health" "Grafana" "$GRAFANA_MAX_ATTEMPTS" "$GRAFANA_LOG"
 provision_task_resources
 
 # Start mcp-grafana in streamable-http mode for Harbor agent access
@@ -171,14 +202,14 @@ GRAFANA_URL=http://localhost:3000 /usr/local/bin/mcp-grafana \
     --disable-incident \
     --disable-asserts \
     --disable-pyroscope \
-    > /logs/artifacts/sidecar/mcp-grafana.log 2>&1 &
+    > "$MCP_GRAFANA_LOG" 2>&1 &
 
 # Wait for mcp-grafana to be listening (404 is fine — it serves on /mcp path)
 wait_for_http_listener \
     "http://localhost:8080/" \
     "mcp-grafana" \
     "$MCP_MAX_ATTEMPTS" \
-    "/logs/artifacts/sidecar/mcp-grafana.log"
+    "$MCP_GRAFANA_LOG"
 
 echo "=== Environment Ready ==="
 echo "  Grafana:     http://localhost:3000"
