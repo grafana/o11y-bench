@@ -23,6 +23,7 @@ from reporting.report_paths import (
 
 from .config import (
     PROVIDERS,
+    ROOT,
     STANDARD_SUITE,
     JobSpec,
     SuiteOpts,
@@ -135,11 +136,184 @@ def _stamp_checksums(job_dir: Path, task_checksums: dict[str, str]) -> None:
                 result_path.write_text(json.dumps(payload, indent=4) + "\n")
 
 
+def _read_json_dict(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _write_json_dict(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, indent=4) + "\n")
+
+
+def _portable_artifact_path(path: Path, fallback: Path) -> str:
+    try:
+        portable = path.resolve().relative_to(ROOT)
+    except ValueError:
+        portable = fallback
+    return portable.as_posix()
+
+
+def _portable_jobs_dir(job_dir: Path) -> str:
+    return _portable_artifact_path(job_dir.parent, Path("jobs") / job_dir.parent.name)
+
+
+def _portable_job_dir(job_dir: Path) -> str:
+    return _portable_artifact_path(job_dir, Path("jobs") / job_dir.parent.name / job_dir.name)
+
+
+def _portable_task_root(tasks_dir: Path) -> str:
+    return _portable_artifact_path(tasks_dir, Path("tasks"))
+
+
+def _portable_task_path(tasks_dir: Path, task_name: str) -> str:
+    return _portable_artifact_path(tasks_dir / task_name, Path("tasks") / task_name)
+
+
+def _configured_task_name(payload: dict[str, Any]) -> str | None:
+    task = payload.get("task")
+    if isinstance(task, dict):
+        task_path = task.get("path")
+        if isinstance(task_path, str) and task_path:
+            return Path(task_path).name
+    return None
+
+
+def _trial_task_name(trial_dir: Path, task_name: str | None) -> str:
+    if isinstance(task_name, str) and task_name:
+        return task_name
+    return trial_dir.name.split("__", 1)[0]
+
+
+def _resolved_trial_task_name(
+    trial_dir: Path,
+    *,
+    result_payload: dict[str, Any] | None = None,
+    config_payload: dict[str, Any] | None = None,
+) -> str:
+    task_name = result_payload.get("task_name") if isinstance(result_payload, dict) else None
+    if not isinstance(task_name, str) or not task_name:
+        task_name = (
+            _configured_task_name(config_payload)
+            if isinstance(config_payload, dict)
+            else None
+        )
+    return _trial_task_name(trial_dir, task_name)
+
+
+def _sanitize_trial_config_payload(
+    payload: dict[str, Any], *, job_dir: Path, trial_dir: Path, tasks_dir: Path, task_name: str | None
+) -> bool:
+    changed = False
+    task_name = _trial_task_name(trial_dir, task_name or _configured_task_name(payload))
+    portable_job_dir = _portable_job_dir(job_dir)
+    portable_task_dir = _portable_task_path(tasks_dir, task_name)
+
+    if payload.get("trials_dir") != portable_job_dir:
+        payload["trials_dir"] = portable_job_dir
+        changed = True
+
+    task = payload.get("task")
+    if isinstance(task, dict) and task.get("path") != portable_task_dir:
+        task["path"] = portable_task_dir
+        changed = True
+
+    return changed
+
+
+def _sanitize_trial_result_payload(
+    payload: dict[str, Any], *, job_dir: Path, trial_dir: Path, tasks_dir: Path
+) -> bool:
+    changed = False
+    task_name = _trial_task_name(trial_dir, payload.get("task_name"))
+    portable_job_dir = _portable_job_dir(job_dir)
+    portable_task_dir = _portable_task_path(tasks_dir, task_name)
+    portable_trial_dir = f"{portable_job_dir}/{trial_dir.name}"
+    portable_trial_uri = f"file:{portable_trial_dir}"
+
+    if payload.get("trial_uri") != portable_trial_uri:
+        payload["trial_uri"] = portable_trial_uri
+        changed = True
+
+    config_payload = payload.get("config")
+    if isinstance(config_payload, dict):
+        if _sanitize_trial_config_payload(
+            config_payload,
+            job_dir=job_dir,
+            trial_dir=trial_dir,
+            tasks_dir=tasks_dir,
+            task_name=task_name,
+        ):
+            changed = True
+
+    task = payload.get("task")
+    if isinstance(task, dict) and task.get("path") != portable_task_dir:
+        task["path"] = portable_task_dir
+        changed = True
+
+    task_id = payload.get("task_id")
+    if isinstance(task_id, dict) and task_id.get("path") != portable_task_dir:
+        task_id["path"] = portable_task_dir
+        changed = True
+
+    return changed
+
+
+def _sanitize_job_artifacts(job_dir: Path, tasks_dir: Path) -> None:
+    config_path = job_dir / "config.json"
+    if config_path.exists():
+        config_payload = _read_json_dict(config_path)
+        if isinstance(config_payload, dict):
+            changed = False
+            portable_jobs_dir = _portable_jobs_dir(job_dir)
+            portable_tasks_dir = _portable_task_root(tasks_dir)
+            if config_payload.get("jobs_dir") != portable_jobs_dir:
+                config_payload["jobs_dir"] = portable_jobs_dir
+                changed = True
+            datasets = config_payload.get("datasets")
+            if isinstance(datasets, list):
+                for dataset in datasets:
+                    if not isinstance(dataset, dict):
+                        continue
+                    if dataset.get("path") != portable_tasks_dir:
+                        dataset["path"] = portable_tasks_dir
+                        changed = True
+            if changed:
+                _write_json_dict(config_path, config_payload)
+
+    for trial_dir in _iter_trial_dirs(job_dir):
+        trial_config_path = trial_dir / "config.json"
+        result_path = trial_dir / "result.json"
+        trial_config = _read_json_dict(trial_config_path) if trial_config_path.exists() else None
+        result_payload = _read_json_dict(result_path) if result_path.exists() else None
+        task_name = _resolved_trial_task_name(
+            trial_dir,
+            result_payload=result_payload,
+            config_payload=trial_config,
+        )
+        if isinstance(trial_config, dict) and _sanitize_trial_config_payload(
+                trial_config,
+                job_dir=job_dir,
+                trial_dir=trial_dir,
+                tasks_dir=tasks_dir,
+                task_name=task_name,
+            ):
+            _write_json_dict(trial_config_path, trial_config)
+
+        if isinstance(result_payload, dict) and _sanitize_trial_result_payload(
+            result_payload, job_dir=job_dir, trial_dir=trial_dir, tasks_dir=tasks_dir
+        ):
+            _write_json_dict(result_path, result_payload)
+
+
 def finalize_job_dir(job_dir: Path, tasks_dir: Path, task_checksums: dict[str, str]) -> Path | None:
     """Stamp checksums and generate per-job HTML report."""
     if not job_dir.exists():
         return None
     _stamp_checksums(job_dir, task_checksums)
+    _sanitize_job_artifacts(job_dir, tasks_dir)
     if not run_report.load_trials(job_dir):
         return None
     report_path = run_report_output_path(job_dir)

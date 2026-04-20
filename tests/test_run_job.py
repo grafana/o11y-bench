@@ -110,6 +110,137 @@ def test_execute_job_resumes_from_saved_config(monkeypatch, tmp_path) -> None:
     ]
 
 
+def test_finalize_job_dir_sanitizes_artifact_paths(monkeypatch, tmp_path) -> None:
+    tasks_dir = tmp_path / "tasks"
+    task_dir = tasks_dir / "promql-error-rate"
+    (task_dir / "tests").mkdir(parents=True)
+    (task_dir / "tests" / "problem.yaml").write_text("prompt: test\n")
+
+    jobs_dir = tmp_path / "nested" / "suite"
+    job_dir = jobs_dir / "openai-gpt-5-4-nano-off-k1"
+    trial_dir = job_dir / "promql-error-rate__abc123"
+    trial_dir.mkdir(parents=True)
+
+    (job_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "job_name": job_dir.name,
+                "jobs_dir": str(jobs_dir.resolve()),
+                "datasets": [{"path": str(tasks_dir.resolve())}],
+            }
+        )
+    )
+    (trial_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "task": {"path": str(task_dir.resolve())},
+                "trials_dir": str(job_dir.resolve()),
+            }
+        )
+    )
+    (trial_dir / "result.json").write_text(
+        json.dumps(
+            {
+                "trial_uri": trial_dir.resolve().as_uri(),
+                "task_name": "promql-error-rate",
+                "task_id": {"path": str(task_dir.resolve())},
+                "task_checksum": "old",
+                "config": {
+                    "task": {"path": str(task_dir.resolve())},
+                    "trials_dir": str(job_dir.resolve()),
+                },
+                "task": {"path": str(task_dir.resolve())},
+                "agent_info": {"model_info": {"name": "openai/gpt-5.4-nano"}},
+                "agent_result": {"metadata": {"reasoning_effort": "off"}},
+            }
+        )
+    )
+
+    monkeypatch.setattr(run.run_report, "load_trials", lambda job_dir: [{}])
+    monkeypatch.setattr(run.run_report, "write_report", lambda *args, **kwargs: None)
+
+    report_path = run.finalize_job_dir(job_dir, tasks_dir, {"promql-error-rate": "new"})
+
+    saved_job = json.loads((job_dir / "config.json").read_text())
+    saved_trial = json.loads((trial_dir / "config.json").read_text())
+    saved_result = json.loads((trial_dir / "result.json").read_text())
+
+    assert report_path == job_dir / "run_report.html"
+    assert saved_job["jobs_dir"] == "jobs/suite"
+    assert saved_job["datasets"][0]["path"] == "tasks"
+    assert saved_trial["task"]["path"] == "tasks/promql-error-rate"
+    assert saved_trial["trials_dir"] == "jobs/suite/openai-gpt-5-4-nano-off-k1"
+    assert saved_result["trial_uri"] == "file:jobs/suite/openai-gpt-5-4-nano-off-k1/promql-error-rate__abc123"
+    assert saved_result["config"]["task"]["path"] == "tasks/promql-error-rate"
+    assert saved_result["config"]["trials_dir"] == "jobs/suite/openai-gpt-5-4-nano-off-k1"
+    assert saved_result["task_id"]["path"] == "tasks/promql-error-rate"
+    assert saved_result["task"]["path"] == "tasks/promql-error-rate"
+    assert saved_result["task_checksum"] == "new"
+
+
+def test_finalize_job_dir_preserves_full_task_id_in_trial_config(monkeypatch, tmp_path) -> None:
+    tasks_dir = tmp_path / "tasks"
+    task_name = "traceql-discover-orders-error-attributes"
+    task_dir = tasks_dir / task_name
+    (task_dir / "tests").mkdir(parents=True)
+    (task_dir / "tests" / "problem.yaml").write_text("prompt: test\n")
+
+    jobs_dir = tmp_path / "nested" / "suite"
+    job_dir = jobs_dir / "openai-gpt-5-4-nano-off-k1"
+    trial_dir = job_dir / "traceql-discover-orders-error-at__abc1234"
+    truncated_task_name = trial_dir.name.split("__", 1)[0]
+    truncated_task_path = str((tasks_dir / truncated_task_name).resolve())
+    trial_dir.mkdir(parents=True)
+
+    (job_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "job_name": job_dir.name,
+                "jobs_dir": str(jobs_dir.resolve()),
+                "datasets": [{"path": str(tasks_dir.resolve())}],
+            }
+        )
+    )
+    (trial_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "task": {"path": truncated_task_path},
+                "trials_dir": str(job_dir.resolve()),
+            }
+        )
+    )
+    (trial_dir / "result.json").write_text(
+        json.dumps(
+            {
+                "trial_uri": trial_dir.resolve().as_uri(),
+                "task_name": task_name,
+                "task_id": {"path": str(task_dir.resolve())},
+                "task_checksum": "old",
+                "config": {
+                    "task": {"path": truncated_task_path},
+                    "trials_dir": str(job_dir.resolve()),
+                },
+                "task": {"path": str(task_dir.resolve())},
+                "agent_info": {"model_info": {"name": "openai/gpt-5.4-nano"}},
+                "agent_result": {"metadata": {"reasoning_effort": "off"}},
+            }
+        )
+    )
+
+    monkeypatch.setattr(run.run_report, "load_trials", lambda job_dir: [{}])
+    monkeypatch.setattr(run.run_report, "write_report", lambda *args, **kwargs: None)
+
+    run.finalize_job_dir(job_dir, tasks_dir, {task_name: "new"})
+
+    saved_trial = json.loads((trial_dir / "config.json").read_text())
+    saved_result = json.loads((trial_dir / "result.json").read_text())
+
+    assert saved_trial["task"]["path"] == f"tasks/{task_name}"
+    assert saved_result["config"]["task"]["path"] == f"tasks/{task_name}"
+    assert saved_result["task"]["path"] == f"tasks/{task_name}"
+    assert saved_result["task_id"]["path"] == f"tasks/{task_name}"
+
+
 @pytest.mark.parametrize(
     ("dry_run", "expected_events", "expected_preflight_calls"),
     [
