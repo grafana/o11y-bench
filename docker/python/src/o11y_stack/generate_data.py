@@ -821,7 +821,7 @@ def generate_all_data() -> dict[str, ServiceMetrics]:
             # Generate requests/logs/traces once per minute
             if current_minute != last_minute:
                 last_minute = current_minute
-                num_requests = max(1, int(traffic * 3))
+                num_requests = max(1, int(traffic * 6))
 
                 for _ in range(num_requests):
                     req_ts = current + timedelta(seconds=random.uniform(0, 59))
