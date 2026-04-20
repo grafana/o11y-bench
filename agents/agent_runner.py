@@ -336,7 +336,7 @@ async def run_agent() -> None:
                 }
                 if reasoning_effort != "off":
                     litellm_kwargs["reasoning_effort"] = reasoning_effort
-                else:
+                elif "claude-opus-4-7" not in model:
                     litellm_kwargs["temperature"] = temperature
 
                 step = 0
