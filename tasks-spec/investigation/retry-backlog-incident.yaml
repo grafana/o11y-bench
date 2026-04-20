@@ -9,8 +9,9 @@ tags:
 statement: |
   During the payment-led incident, did retries actually pile up somewhere or was that a false lead?
   Using the last six hours of telemetry, tell me which service owned the main retry backlog, what
-  queue name showed up in the warning logs, about how high the main backlog got, and whether the
-  other service was only smaller spillover.
+  queue name showed up in the warning logs, about how high the main backlog got, and compare the
+  peak backlog on the other service so I can tell whether it was a real co-primary or only smaller
+  spillover.
 checks: []
 rubric:
 - criterion: The final response states Peak payment-service retry backlog accurately.
