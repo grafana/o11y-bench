@@ -26,13 +26,13 @@ rubric:
   fact:
     kind: query
     backend: loki
-    query: sum(count_over_time({job=~".+"} | json | __error__="" | path="/api/payments" | status >= 500 [6h]))
+    query: sum(count_over_time({job=~"user-service|order-service|payment-service"} | json | __error__="" | path="/api/payments" | status >= 500 [6h]))
 - criterion: The final response states Payments-path share of all 5xx request logs accurately.
   weight: 25
   fact:
     kind: query
     backend: loki
-    query: sum(count_over_time({job=~".+"} | json | __error__="" | path="/api/payments" | status >= 500 [6h])) / sum(count_over_time({job=~".+"} | json | __error__="" | status >= 500 [6h]))
+    query: sum(count_over_time({job=~"user-service|order-service|payment-service"} | json | __error__="" | path="/api/payments" | status >= 500 [6h])) / sum(count_over_time({job=~"user-service|order-service|payment-service"} | json | __error__="" | status >= 500 [6h]))
 - criterion: The final response identifies `/api/payments` as the endpoint carrying the most true 5xx request failures in the window and ties that claim to log evidence rather than only generic incident wording
   weight: 10
 - criterion: The final response identifies `payment-service` as the backend where the representative payments-path trace first fails, not merely an upstream relay layer
