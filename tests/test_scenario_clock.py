@@ -1,30 +1,22 @@
 import os
-from pathlib import Path
 
 from o11y_bench.scenario_clock import (
     bound_scenario_time,
-    ensure_scenario_time,
-    infer_scenario_time_from_job,
+    parse_scenario_time_iso,
+    resolve_scenario_time,
 )
 
 
-def test_ensure_scenario_time_persists_existing_env(monkeypatch, tmp_path: Path) -> None:
+def test_resolve_scenario_time_returns_env_when_set(monkeypatch) -> None:
     monkeypatch.setenv("O11Y_SCENARIO_TIME_ISO", "2026-04-04T10:05:14Z")
 
-    value = ensure_scenario_time(tmp_path)
-
-    assert value == "2026-04-04T10:05:14Z"
-    assert (tmp_path / "scenario_time.txt").read_text().strip() == value
+    assert resolve_scenario_time() == "2026-04-04T10:05:14Z"
 
 
-def test_ensure_scenario_time_prefers_saved_value_for_regrade(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("O11Y_SCENARIO_TIME_ISO", "2026-04-04T12:00:00Z")
-    (tmp_path / "scenario_time.txt").write_text("2026-04-04T10:05:14Z\n")
+def test_resolve_scenario_time_uses_now_when_unset(monkeypatch) -> None:
+    monkeypatch.delenv("O11Y_SCENARIO_TIME_ISO", raising=False)
 
-    value = ensure_scenario_time(tmp_path, prefer_existing=True)
-
-    assert value == "2026-04-04T10:05:14Z"
-    assert (tmp_path / "scenario_time.txt").read_text().strip() == value
+    parse_scenario_time_iso(resolve_scenario_time())
 
 
 def test_bound_scenario_time_restores_previous_env(monkeypatch) -> None:
@@ -36,11 +28,10 @@ def test_bound_scenario_time_restores_previous_env(monkeypatch) -> None:
     assert os.environ["O11Y_SCENARIO_TIME_ISO"] == "2026-04-04T10:05:14Z"
 
 
-def test_infer_scenario_time_from_existing_job_artifact(tmp_path: Path) -> None:
-    trial_dir = tmp_path / "task__abc123" / "agent"
-    trial_dir.mkdir(parents=True)
-    (trial_dir / "instruction.txt").write_text(
-        "<context>\nCurrent time: 2026-04-04T10:05:14Z\n</context>\n"
-    )
+def test_bound_scenario_time_clears_env_when_previously_unset(monkeypatch) -> None:
+    monkeypatch.delenv("O11Y_SCENARIO_TIME_ISO", raising=False)
 
-    assert infer_scenario_time_from_job(tmp_path) == "2026-04-04T10:05:14Z"
+    with bound_scenario_time("2026-04-04T11:00:00Z"):
+        assert os.environ["O11Y_SCENARIO_TIME_ISO"] == "2026-04-04T11:00:00Z"
+
+    assert "O11Y_SCENARIO_TIME_ISO" not in os.environ

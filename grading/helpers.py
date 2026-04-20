@@ -1,15 +1,9 @@
 import re
 from collections.abc import Iterator
-from datetime import UTC, datetime
 from typing import Any
 
+from grading.env_context import synthetic_eval_time_unix
 from grading.models import ToolCall, Transcript
-
-# Parsed from the first user turn: agent_runner injects Current time in <context>…</context>.
-_SCENARIO_TIME_RE = re.compile(
-    r"Current time:\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)",
-    re.IGNORECASE,
-)
 
 _TRACE_ID_HEX_32 = re.compile(r"(?<![0-9a-fA-F])([0-9a-fA-F]{32})(?![0-9a-fA-F])")
 # Tempo search JSON often omits a leading zero (31 hex chars); get-trace uses 32.
@@ -19,29 +13,11 @@ _TRACE_ID_JSON = re.compile(
 )
 
 
-def _first_user_message_text(transcript: Transcript) -> str | None:
-    for msg in transcript.messages:
-        if msg.role == "user" and msg.content:
-            return str(msg.content).strip()
-    return None
-
-
-def prometheus_eval_time_unix(params: dict[str, Any], transcript: Transcript) -> float | None:
+def prometheus_eval_time_unix(params: dict[str, Any], _transcript: Transcript) -> float | None:
     raw = params.get("time_unix")
     if raw is not None:
         return float(raw)
-
-    user_text = _first_user_message_text(transcript)
-    if not user_text:
-        return None
-
-    match = _SCENARIO_TIME_RE.search(user_text)
-    if not match:
-        return None
-
-    iso = match.group(1)
-    dt = datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
-    return dt.timestamp()
+    return synthetic_eval_time_unix()
 
 
 def final_assistant_text(transcript: Transcript) -> str | None:
