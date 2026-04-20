@@ -183,16 +183,23 @@ class IncidentConfig:
     def get_slow_probability(self, ts: datetime, path: str) -> float:
         """Return probability that a request at this timestamp/path is flagged slow.
 
-        During the order-service latency incident, /api/orders is the dominant slow
-        path (checkout flow stalls hardest); other order-service endpoints see only
-        a mild uptick so the hotspot is unambiguous when counting >1s request logs.
+        Slow requests are concentrated in two latency incidents:
+        - Order-service latency incident (~6h before end): /api/orders dominates.
+        - User-service cache-refresh incident (~9h before end): /api/users slow.
+
+        A small baseline (1%) keeps healthy periods realistic without letting
+        background noise outweigh the incident spike in a 6h query window. This
+        gives the canonical queries a deterministic, unambiguous dominant slow
+        path regardless of which wall-clock end-time the 6h window sits at.
         """
         if self.latency_start <= ts <= self.latency_end:
             if path == "/api/orders":
                 return 0.60
             if path in ("/api/products", "/api/cart"):
                 return 0.10
-        return 0.05  # baseline slow-request rate
+        if self.cache_refresh_start <= ts <= self.cache_refresh_end and path == "/api/users":
+            return 0.40
+        return 0.01  # small baseline slow rate for realism, not enough to dominate
 
     def get_cache_refresh_lag(self, ts: datetime, service: str) -> int:
         """Synthetic cache refresh lag around the user-service incident."""
