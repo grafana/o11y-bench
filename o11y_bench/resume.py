@@ -76,6 +76,41 @@ def normalize_saved_path(value: Any) -> Any:
     return value
 
 
+def configured_task_name(config: dict[str, Any]) -> str | None:
+    task = config.get("task")
+    if not isinstance(task, dict):
+        return None
+    task_path = task.get("path")
+    if isinstance(task_path, str) and task_path:
+        return Path(task_path).name
+    return None
+
+
+def resolved_trial_task_name(trial_dir: Path, trial_config: dict[str, Any]) -> str:
+    result_payload = load_json_object(trial_dir / "result.json")
+    task_name = result_payload.get("task_name") if isinstance(result_payload, dict) else None
+    if not isinstance(task_name, str) or not task_name:
+        task_name = configured_task_name(trial_config)
+    if isinstance(task_name, str) and task_name:
+        return task_name
+    return trial_dir.name.split("__", 1)[0]
+
+
+def configured_root_path(config: dict[str, Any], key: str) -> Path | None:
+    value = config.get(key)
+    return Path(value) if isinstance(value, str) and value else None
+
+
+def configured_tasks_root(config: dict[str, Any]) -> Path | None:
+    datasets = config.get("datasets")
+    if not isinstance(datasets, list) or not datasets:
+        return None
+    first = datasets[0]
+    if not isinstance(first, dict):
+        return None
+    return configured_root_path(first, "path")
+
+
 def load_json_object(path: Path) -> dict[str, Any] | None:
     try:
         payload = json.loads(path.read_text())
@@ -154,7 +189,7 @@ def patch_job_concurrency_config(
 
 
 def patch_job_paths_for_resume(
-    job_dir: Path, expected_jobs_dir: Path, *, dry_run: bool = False
+    job_dir: Path, expected_jobs_dir: Path, expected_tasks_dir: Path, *, dry_run: bool = False
 ) -> list[str]:
     notes: list[str] = []
     config_path = job_dir / "config.json"
@@ -172,7 +207,9 @@ def patch_job_paths_for_resume(
         notes.append(
             f"{verb} {job_dir.name} config for resume: jobs_dir {current_jobs_dir} -> {expected_jobs_dir_text}"
         )
-    current_trials_dir = str(job_dir.resolve())
+    jobs_root = configured_root_path(config, "jobs_dir")
+    current_trials_dir = str((jobs_root / job_dir.name) if jobs_root else job_dir.resolve())
+    tasks_root = configured_tasks_root(config)
     affected_trial_configs = 0
     skipped_trial_configs = 0
     for trial_dir in sorted(
@@ -185,17 +222,34 @@ def patch_job_paths_for_resume(
         if trial_config is None:
             skipped_trial_configs += 1
             continue
-        if normalize_saved_path(trial_config.get("trials_dir")) == current_trials_dir:
+        task = trial_config.get("task")
+        task_name = resolved_trial_task_name(trial_dir, trial_config)
+        current_task_dir = str(
+            (tasks_root / task_name) if tasks_root else (expected_tasks_dir / task_name).resolve()
+        )
+
+        needs_trials_dir_patch = (
+            normalize_saved_path(trial_config.get("trials_dir")) != current_trials_dir
+        )
+        needs_task_path_patch = (
+            not isinstance(task, dict) or normalize_saved_path(task.get("path")) != current_task_dir
+        )
+        if not needs_trials_dir_patch and not needs_task_path_patch:
             continue
         if not dry_run:
             trial_config["trials_dir"] = current_trials_dir
+            if not isinstance(task, dict):
+                task = {}
+                trial_config["task"] = task
+            task["path"] = current_task_dir
             trial_config_path.write_text(json.dumps(trial_config, indent=4) + "\n")
         affected_trial_configs += 1
 
     if affected_trial_configs:
         verb = "Would patch" if dry_run else "Patched"
+        task_root_display = tasks_root if tasks_root else expected_tasks_dir.resolve()
         notes.append(
-            f"{verb} {affected_trial_configs} trial config(s) for resume: trials_dir -> {current_trials_dir}"
+            f"{verb} {affected_trial_configs} trial config(s) for resume: trials_dir -> {current_trials_dir}, task.path -> {task_root_display}/<task>"
         )
     if skipped_trial_configs:
         verb = "Would skip" if dry_run else "Skipped"
@@ -275,7 +329,10 @@ def plan_job_dir_for_resume(
         )
 
     config_notes_list = patch_job_paths_for_resume(
-        job_dir, Path(expected_fields["jobs_dir"]), dry_run=True
+        job_dir,
+        Path(expected_fields["jobs_dir"]),
+        Path(expected_fields["tasks_path"]),
+        dry_run=True,
     )
     concurrency_note = patch_job_concurrency_config(
         job_dir, expected_fields["n_concurrent_trials"], dry_run=True
@@ -357,7 +414,13 @@ def repair_job_dir_for_resume(
         return notes
 
     plan = plan_job_dir_for_resume(job_dir, expected_fields, task_checksums)
-    notes.extend(patch_job_paths_for_resume(job_dir, Path(expected_fields["jobs_dir"])))
+    notes.extend(
+        patch_job_paths_for_resume(
+            job_dir,
+            Path(expected_fields["jobs_dir"]),
+            Path(expected_fields["tasks_path"]),
+        )
+    )
     concurrency_note = patch_job_concurrency_config(job_dir, expected_fields["n_concurrent_trials"])
     if concurrency_note:
         notes.append(concurrency_note)
