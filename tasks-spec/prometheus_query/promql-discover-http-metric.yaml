@@ -16,12 +16,10 @@ statement: |
   include that numeric total (req/s) in your answer so I can sanity-check chart scale.
 rubric:
 - criterion: The final response states Aggregate HTTP request rate accurately.
-  weight: 40
+  weight: 55
   fact:
     kind: query
     backend: prometheus
     query: sum(rate(http_requests_total{job=~"user-service|order-service|payment-service"}[5m]))
-- criterion: The response names http_requests_total
-  weight: 25.0
-- criterion: The response names the job label
-  weight: 20.0
+- criterion: The response recommends `http_requests_total` as the metric and the `job` label to break it down by service, tying that recommendation to what is actually scraped in the environment rather than a generic PromQL textbook answer.
+  weight: 30
