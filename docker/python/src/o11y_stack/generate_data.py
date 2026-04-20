@@ -162,7 +162,7 @@ class IncidentConfig:
         """Return error rate for a service at a given time."""
         if self.error_spike_start <= ts <= self.error_spike_end:
             if service == "payment-service":
-                return 0.25  # 25% errors
+                return 0.50  # 50% errors — payment-service owns the spike
             if service == "order-service":
                 return 0.15  # 15% cascading errors
             if service == "api-gateway":
