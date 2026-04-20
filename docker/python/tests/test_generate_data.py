@@ -143,3 +143,39 @@ def test_data_end_time_honors_explicit_override(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setenv("O11Y_SCENARIO_TIME_ISO", "2026-04-04T10:05:14Z")
 
     assert generate_data.data_end_time_utc() == datetime(2026, 4, 4, 10, 5, 14, tzinfo=UTC)
+
+
+def test_wait_for_tempo_searchable_requires_trace_by_id_and_search(monkeypatch: pytest.MonkeyPatch):
+    end_time = datetime(2026, 4, 19, 16, 0, tzinfo=UTC)
+    attempts = {"search": 0, "errors": 0}
+
+    def fake_search(
+        query: str, start_sec: int, end_sec: int, *, limit: int = 20
+    ) -> tuple[list[dict], str]:
+        del start_sec, end_sec, limit
+        if not query:
+            attempts["search"] += 1
+            return ([{"traceID": "abc"}], "") if attempts["search"] >= 2 else ([], "")
+        attempts["errors"] += 1
+        return ([{"traceID": "def"}], "") if attempts["errors"] >= 2 else ([], "")
+
+    monkeypatch.setattr(generate_data, "fetch_tempo_search_traces", fake_search)
+    monkeypatch.setattr(generate_data.time, "sleep", lambda _seconds: None)
+
+    generate_data.wait_for_tempo_searchable(end_time, max_attempts=3)
+
+
+def test_wait_for_tempo_searchable_raises_when_search_stays_empty(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    end_time = datetime(2026, 4, 19, 16, 0, tzinfo=UTC)
+
+    monkeypatch.setattr(
+        generate_data,
+        "fetch_tempo_search_traces",
+        lambda _query, _start, _end, *, limit=20: ([], ""),
+    )
+    monkeypatch.setattr(generate_data.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(RuntimeError, match="Tempo search never became ready"):
+        generate_data.wait_for_tempo_searchable(end_time, max_attempts=2)

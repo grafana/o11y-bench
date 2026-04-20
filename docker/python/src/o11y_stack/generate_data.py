@@ -657,41 +657,81 @@ def flush_tempo(max_attempts: int = 5) -> None:
             time.sleep(1)
 
 
-def wait_for_tempo_searchable(end_time: datetime, max_attempts: int = 30) -> None:
+def fetch_tempo_search_traces(
+    query: str,
+    start_sec: int,
+    end_sec: int,
+    *,
+    limit: int = 20,
+) -> tuple[list[dict], str]:
+    params = urllib.parse.urlencode(
+        {"q": query, "start": start_sec, "end": end_sec, "limit": limit}
+    )
+    url = f"{TEMPO_QUERY_URL}/api/search?{params}"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            payload = json.load(resp)
+    except Exception as exc:
+        return [], f"Tempo search failed: {exc}"
+    traces = payload.get("traces")
+    if not isinstance(traces, list):
+        return [], "Tempo search response missing traces list."
+    return [item for item in traces if isinstance(item, dict)], ""
+
+
+def _probe_detail(name: str, traces: list[dict], err: str) -> str:
+    if traces:
+        return f"{name}={len(traces)}"
+    return f"{name}={err or 'empty'}"
+
+
+def wait_for_tempo_searchable(
+    end_time: datetime, max_attempts: int = 30, poll_interval: float = 1.0
+) -> None:
+    # Probes are tracked independently: broad and error searches may become ready
+    # on different polls (errors are sparser), and requiring both on the same tick
+    # caused spurious failures. Poll interval matches Tempo's blocklist_poll.
     start_sec = int((end_time - timedelta(hours=24)).timestamp())
     end_sec = int(end_time.timestamp())
-    query = urllib.parse.urlencode({"q": "{}", "start": start_sec, "end": end_sec})
-    search_url = f"{TEMPO_QUERY_URL}/api/search?{query}"
-    values_url = (
-        f"{TEMPO_QUERY_URL}/api/v2/search/tag/resource.service.name/values?"
-        f"{urllib.parse.urlencode({'q': '', 'start': start_sec, 'end': end_sec})}"
-    )
+    broad_traces: list[dict] = []
+    broad_err = ""
+    error_traces: list[dict] = []
+    error_err = ""
+
     for attempt in range(max_attempts):
-        try:
-            with urllib.request.urlopen(search_url, timeout=10) as resp:
-                payload = json.load(resp)
-            traces = payload.get("traces", [])
-            if traces:
-                return
-        except Exception as exc:
-            if attempt == max_attempts - 1:
-                log(f"  Tempo search never became ready after {max_attempts} attempts: {exc}")
-                raise RuntimeError("Tempo search never became ready") from exc
-        try:
-            with urllib.request.urlopen(values_url, timeout=10) as resp:
-                payload = json.load(resp)
-            values = payload.get("tagValues") or payload.get("values") or payload
-            if isinstance(values, list) and values:
-                return
-        except Exception as exc:
-            if attempt == max_attempts - 1:
-                log(
-                    "  Tempo search tag values never became ready after "
-                    f"{max_attempts} attempts: {exc}"
-                )
-                raise RuntimeError("Tempo tag values never became ready") from exc
-        time.sleep(1)
-    raise RuntimeError("Tempo traces never became searchable")
+        attempt_num = attempt + 1
+        if not broad_traces:
+            broad_traces, broad_err = fetch_tempo_search_traces("", start_sec, end_sec, limit=5)
+        if not error_traces:
+            error_traces, error_err = fetch_tempo_search_traces(
+                "{ span:status = error }", start_sec, end_sec, limit=5
+            )
+
+        if broad_traces and error_traces:
+            log(
+                "  Tempo search ready "
+                f"(attempt {attempt_num}/{max_attempts}, "
+                f"broad={len(broad_traces)}, error={len(error_traces)})"
+            )
+            return
+
+        if attempt == 0 or attempt_num % 5 == 0:
+            details = [
+                _probe_detail("broad", broad_traces, broad_err),
+                _probe_detail("error", error_traces, error_err),
+            ]
+            log(
+                "  Waiting for Tempo search "
+                f"(attempt {attempt_num}/{max_attempts}): {'; '.join(details)}"
+            )
+        time.sleep(poll_interval)
+
+    details = [
+        _probe_detail("broad", broad_traces, broad_err),
+        _probe_detail("error", error_traces, error_err),
+    ]
+    log(f"  Tempo search never became ready after {max_attempts} attempts: {'; '.join(details)}")
+    raise RuntimeError("Tempo search never became ready")
 
 
 def data_end_time_utc() -> datetime:
@@ -960,7 +1000,9 @@ def generate_all_data() -> dict[str, ServiceMetrics]:
     if log_batch:
         push_logs_batch(log_batch)
 
+    log("  Flushing Tempo blocks...")
     flush_tempo()
+    log("  Waiting for Tempo search to become ready...")
     wait_for_tempo_searchable(end_time)
 
     log(f"  Requests: {total_requests:,}")
