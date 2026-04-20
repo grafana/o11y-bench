@@ -42,6 +42,7 @@ INVALID_INFRA_MARKERS = (
     "network ",
     "image ",
 )
+STEP_LIMIT_MARKER = "Agent exceeded max step limit"
 ROOT = Path(__file__).resolve().parent.parent
 
 JsonDict = dict[str, Any]
@@ -191,6 +192,35 @@ def is_nonzero_agent_exit_trial(trial: JsonDict) -> bool:
     return message.startswith("Agent exited with code ")
 
 
+def _trial_dir_from_result_path(trial: JsonDict) -> Path | None:
+    result_path = trial.get("__result_path")
+    if not isinstance(result_path, str) or not result_path:
+        return None
+    return Path(result_path).parent
+
+
+def _trial_stdout_path(trial: JsonDict, trial_dir: Path | None = None) -> Path | None:
+    resolved_trial_dir = trial_dir or _trial_dir_from_result_path(trial)
+    if resolved_trial_dir is None:
+        return None
+    return resolved_trial_dir / "agent" / "command-0" / "stdout.txt"
+
+
+def is_agent_step_limit_trial(trial: JsonDict, trial_dir: Path | None = None) -> bool:
+    if not is_nonzero_agent_exit_trial(trial):
+        return False
+
+    stdout_path = _trial_stdout_path(trial, trial_dir)
+    if stdout_path is None or not stdout_path.exists():
+        return False
+
+    try:
+        stdout = stdout_path.read_text()
+    except OSError:
+        return False
+    return STEP_LIMIT_MARKER in stdout
+
+
 def classify_trial_artifact(
     trial_dir: Path,
     trial: JsonDict | None,
@@ -215,11 +245,10 @@ def classify_trial_artifact(
         if not isinstance(stored_checksum, str) or stored_checksum != current_checksum:
             return "stale"
 
-    if (
-        is_invalid_infra_trial(trial)
-        or is_interrupted_trial(trial)
-        or is_missing_reward_trial(trial)
-    ):
+    if is_interrupted_trial(trial) or is_missing_reward_trial(trial):
+        return "retryable"
+
+    if is_invalid_infra_trial(trial, trial_dir=trial_dir):
         return "retryable"
 
     return "complete"
@@ -268,8 +297,10 @@ def agent_seconds(trial: JsonDict) -> float:
     return 0.0
 
 
-def is_invalid_infra_trial(trial: JsonDict) -> bool:
+def is_invalid_infra_trial(trial: JsonDict, trial_dir: Path | None = None) -> bool:
     if is_nonzero_agent_exit_trial(trial):
+        if is_agent_step_limit_trial(trial, trial_dir=trial_dir):
+            return False
         return True
 
     if trial.get("agent_result") is not None:
