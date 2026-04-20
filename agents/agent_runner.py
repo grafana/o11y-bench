@@ -1,6 +1,6 @@
 # /// script
 # dependencies = [
-#   "litellm==1.83.0",
+#   "litellm==1.83.10",
 #   "mcp>=1.9.0",
 # ]
 # ///
