@@ -196,15 +196,18 @@ def _resolved_trial_task_name(
     task_name = result_payload.get("task_name") if isinstance(result_payload, dict) else None
     if not isinstance(task_name, str) or not task_name:
         task_name = (
-            _configured_task_name(config_payload)
-            if isinstance(config_payload, dict)
-            else None
+            _configured_task_name(config_payload) if isinstance(config_payload, dict) else None
         )
     return _trial_task_name(trial_dir, task_name)
 
 
 def _sanitize_trial_config_payload(
-    payload: dict[str, Any], *, job_dir: Path, trial_dir: Path, tasks_dir: Path, task_name: str | None
+    payload: dict[str, Any],
+    *,
+    job_dir: Path,
+    trial_dir: Path,
+    tasks_dir: Path,
+    task_name: str | None,
 ) -> bool:
     changed = False
     task_name = _trial_task_name(trial_dir, task_name or _configured_task_name(payload))
@@ -294,12 +297,12 @@ def _sanitize_job_artifacts(job_dir: Path, tasks_dir: Path) -> None:
             config_payload=trial_config,
         )
         if isinstance(trial_config, dict) and _sanitize_trial_config_payload(
-                trial_config,
-                job_dir=job_dir,
-                trial_dir=trial_dir,
-                tasks_dir=tasks_dir,
-                task_name=task_name,
-            ):
+            trial_config,
+            job_dir=job_dir,
+            trial_dir=trial_dir,
+            tasks_dir=tasks_dir,
+            task_name=task_name,
+        ):
             _write_json_dict(trial_config_path, trial_config)
 
         if isinstance(result_payload, dict) and _sanitize_trial_result_payload(

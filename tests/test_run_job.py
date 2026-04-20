@@ -170,7 +170,10 @@ def test_finalize_job_dir_sanitizes_artifact_paths(monkeypatch, tmp_path) -> Non
     assert saved_job["datasets"][0]["path"] == "tasks"
     assert saved_trial["task"]["path"] == "tasks/promql-error-rate"
     assert saved_trial["trials_dir"] == "jobs/suite/openai-gpt-5-4-nano-off-k1"
-    assert saved_result["trial_uri"] == "file:jobs/suite/openai-gpt-5-4-nano-off-k1/promql-error-rate__abc123"
+    assert (
+        saved_result["trial_uri"]
+        == "file:jobs/suite/openai-gpt-5-4-nano-off-k1/promql-error-rate__abc123"
+    )
     assert saved_result["config"]["task"]["path"] == "tasks/promql-error-rate"
     assert saved_result["config"]["trials_dir"] == "jobs/suite/openai-gpt-5-4-nano-off-k1"
     assert saved_result["task_id"]["path"] == "tasks/promql-error-rate"

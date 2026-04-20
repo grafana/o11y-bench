@@ -232,8 +232,7 @@ def patch_job_paths_for_resume(
             normalize_saved_path(trial_config.get("trials_dir")) != current_trials_dir
         )
         needs_task_path_patch = (
-            not isinstance(task, dict)
-            or normalize_saved_path(task.get("path")) != current_task_dir
+            not isinstance(task, dict) or normalize_saved_path(task.get("path")) != current_task_dir
         )
         if not needs_trials_dir_patch and not needs_task_path_patch:
             continue
