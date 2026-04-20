@@ -19,10 +19,10 @@ checks:
     mode: tool_trace_id
   name: Response cites a trace ID that appears in Tempo tool results
 rubric:
-- criterion: The final response identifies the dominant user-service operation in the slow GET `/api/users` traces rather than stopping at only a generic service-level summary
-  weight: 20
+- criterion: The final response identifies the `refresh auth cache` span (or an equivalent auth-cache refresh operation) inside user-service as the dominant hotspot on slow GET `/api/users` traces, rather than stopping at only a generic service-level summary
+  weight: 25
 - criterion: The final response names `user-service` and `GET /api/users`
-  weight: 15
+  weight: 10
 - criterion: The final response states whether the same hotspot recurs across several slow traces or only some of them
   weight: 10
 - criterion: Any named hotspot in the final answer is grounded in trace spans or timings from the transcript

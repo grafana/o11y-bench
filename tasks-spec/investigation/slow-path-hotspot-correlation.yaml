@@ -28,16 +28,16 @@ rubric:
   fact:
     kind: query
     backend: loki
-    query: sum(count_over_time({job=~".+"} | json | __error__="" | path="/api/products" | duration_ms >= 1000 [6h]))
+    query: sum(count_over_time({job=~"user-service|order-service|payment-service"} | json | __error__="" | path="/api/orders" | duration_ms >= 1000 [6h]))
 - criterion: The final response states Dominant slow-path share of all >1s request logs accurately.
   weight: 25
   fact:
     kind: query
     backend: loki
-    query: sum(count_over_time({job=~".+"} | json | __error__="" | path="/api/products" | duration_ms >= 1000 [6h])) / sum(count_over_time({job=~".+"} | json | __error__="" | duration_ms >= 1000 [6h]))
-- criterion: The final response identifies `/api/products` as the path contributing the most >1s request logs in the window and ties that ranking to log evidence rather than generic latency wording
+    query: sum(count_over_time({job=~"user-service|order-service|payment-service"} | json | __error__="" | path="/api/orders" | duration_ms >= 1000 [6h])) / sum(count_over_time({job=~"user-service|order-service|payment-service"} | json | __error__="" | duration_ms >= 1000 [6h]))
+- criterion: The final response identifies `/api/orders` as the path contributing the most >1s request logs in the window and ties that ranking to log evidence rather than generic latency wording
   weight: 10
 - criterion: The final response states whether one recurring hotspot shows up across several slow traces or whether the slowness is spread around
   weight: 5
-- criterion: The final response identifies `order-service` and `handle GET /api/products` as the main latency hotspot rather than stopping at an upstream relay span like webapp or api-gateway
+- criterion: The final response identifies `order-service` and `handle POST /api/orders` as the main latency hotspot rather than stopping at an upstream relay span like webapp or api-gateway
   weight: 10

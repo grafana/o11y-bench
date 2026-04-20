@@ -162,7 +162,7 @@ class IncidentConfig:
         """Return error rate for a service at a given time."""
         if self.error_spike_start <= ts <= self.error_spike_end:
             if service == "payment-service":
-                return 0.25  # 25% errors
+                return 0.70  # 70% errors — payment-service owns the spike with margin
             if service == "order-service":
                 return 0.15  # 15% cascading errors
             if service == "api-gateway":
@@ -179,6 +179,27 @@ class IncidentConfig:
             if service in ("api-gateway", "webapp"):
                 return 2.0  # Upstream services affected
         return 1.0
+
+    def get_slow_probability(self, ts: datetime, path: str) -> float:
+        """Return probability that a request at this timestamp/path is flagged slow.
+
+        Slow requests are concentrated in two latency incidents:
+        - Order-service latency incident (~6h before end): /api/orders dominates.
+        - User-service cache-refresh incident (~9h before end): /api/users slow.
+
+        A small baseline (1%) keeps healthy periods realistic without letting
+        background noise outweigh the incident spike in a 6h query window. This
+        gives the canonical queries a deterministic, unambiguous dominant slow
+        path regardless of which wall-clock end-time the 6h window sits at.
+        """
+        if self.latency_start <= ts <= self.latency_end:
+            if path == "/api/orders":
+                return 0.60
+            if path in ("/api/products", "/api/cart"):
+                return 0.10
+        if self.cache_refresh_start <= ts <= self.cache_refresh_end and path == "/api/users":
+            return 0.40
+        return 0.01  # small baseline slow rate for realism, not enough to dominate
 
     def get_cache_refresh_lag(self, ts: datetime, service: str) -> int:
         """Synthetic cache refresh lag around the user-service incident."""
@@ -800,7 +821,7 @@ def generate_all_data() -> dict[str, ServiceMetrics]:
             # Generate requests/logs/traces once per minute
             if current_minute != last_minute:
                 last_minute = current_minute
-                num_requests = max(1, int(traffic * 3))
+                num_requests = max(1, int(traffic * 6))
 
                 for _ in range(num_requests):
                     req_ts = current + timedelta(seconds=random.uniform(0, 59))
@@ -810,8 +831,9 @@ def generate_all_data() -> dict[str, ServiceMetrics]:
 
                     error_rate = incidents.get_error_rate(req_ts, target_service)
                     latency_mult = incidents.get_latency_multiplier(req_ts, target_service)
+                    slow_prob = incidents.get_slow_probability(req_ts, endpoint["path"])
                     is_error = random.random() < error_rate
-                    is_slow = random.random() < 0.05
+                    is_slow = random.random() < slow_prob
 
                     base_duration_ms = (
                         random.randint(500, 3000) if is_slow else random.randint(10, 50)

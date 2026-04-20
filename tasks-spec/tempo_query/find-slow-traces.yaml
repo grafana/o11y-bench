@@ -17,6 +17,8 @@ rubric:
 - criterion: The final response points to at least one concrete slow trace using a trace id, a named operation, or an explicit duration figure
   weight: 5.0
 - criterion: The final response discusses slow requests using duration or latency wording
-  weight: 22.0
+  weight: 15.0
 - criterion: The final response ties slowness to payment or checkout (path, operation, or checkout wording) and names at least one concrete service in those slow paths, plus either a second service, an upstream or downstream hop, or wording about recurrence or a pattern
-  weight: 23.0
+  weight: 15.0
+- criterion: The final response identifies `order-service` (and ideally the `handle POST /api/orders` operation) as the backend actually carrying the slow checkout requests, not just upstream relays like webapp or api-gateway
+  weight: 10.0
