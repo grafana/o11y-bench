@@ -180,6 +180,20 @@ class IncidentConfig:
                 return 2.0  # Upstream services affected
         return 1.0
 
+    def get_slow_probability(self, ts: datetime, path: str) -> float:
+        """Return probability that a request at this timestamp/path is flagged slow.
+
+        During the order-service latency incident, /api/orders is the dominant slow
+        path (checkout flow stalls hardest); other order-service endpoints see only
+        a mild uptick so the hotspot is unambiguous when counting >1s request logs.
+        """
+        if self.latency_start <= ts <= self.latency_end:
+            if path == "/api/orders":
+                return 0.60
+            if path in ("/api/products", "/api/cart"):
+                return 0.10
+        return 0.05  # baseline slow-request rate
+
     def get_cache_refresh_lag(self, ts: datetime, service: str) -> int:
         """Synthetic cache refresh lag around the user-service incident."""
         if service != "user-service":
@@ -810,8 +824,9 @@ def generate_all_data() -> dict[str, ServiceMetrics]:
 
                     error_rate = incidents.get_error_rate(req_ts, target_service)
                     latency_mult = incidents.get_latency_multiplier(req_ts, target_service)
+                    slow_prob = incidents.get_slow_probability(req_ts, endpoint["path"])
                     is_error = random.random() < error_rate
-                    is_slow = random.random() < 0.05
+                    is_slow = random.random() < slow_prob
 
                     base_duration_ms = (
                         random.randint(500, 3000) if is_slow else random.randint(10, 50)
