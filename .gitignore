@@ -29,3 +29,4 @@ tasks-level2/
 !reporting/compare_template.html
 .results-archive
 .cache
+.agents
