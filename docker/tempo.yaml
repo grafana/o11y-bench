@@ -1,22 +1,23 @@
 server:
   http_listen_port: 3200
+  grpc_listen_port: 9095
 
-# Single-node: use inmemory rings everywhere, disable clustering
 memberlist:
   join_members: []
   bind_addr:
     - 127.0.0.1
+  bind_port: 7947
   advertise_addr: 127.0.0.1
   abort_if_cluster_join_fails: false
 
 ingester:
-  trace_idle_period: 2s
-  max_block_duration: 5m
-  flush_check_period: 5s
+  trace_idle_period: 1s
+  max_block_duration: 1s
+  flush_check_period: 1s
   lifecycler:
     address: 127.0.0.1
     interface_names: []
-    min_ready_duration: 0s
+    min_ready_duration: 1s
     final_sleep: 0s
     join_after: 0s
     observe_period: 0s
@@ -64,9 +65,10 @@ metrics_generator:
   metrics_ingestion_time_range_slack: 72h
   processor:
     local_blocks:
+      filter_server_spans: false
       flush_to_storage: true
-      max_block_duration: 5m
-      complete_block_timeout: 30s
+      max_block_duration: 30s
+      complete_block_timeout: 1s
       max_block_bytes: 500000000
     service_graphs:
       dimensions: []
@@ -81,8 +83,13 @@ metrics_generator:
 storage:
   trace:
     backend: local
+    blocklist_poll: 1s
     wal:
       path: /var/tempo/wal
+      # Block start/end times only expand to spans within this slack of real wall-clock
+      # time. Backdated benchmark scenarios can sit days/weeks in the past, so keep this
+      # generous — otherwise blocks claim a narrow time range and search filters them out.
+      ingestion_time_range_slack: 720h
     local:
       path: /var/tempo/blocks
 
