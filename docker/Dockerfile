@@ -14,7 +14,7 @@ RUN apk add --no-cache \
     python3
 
 # Install mcp-grafana (uses x86_64 instead of amd64 in release names)
-ARG MCP_GRAFANA_VERSION=0.11.4
+ARG MCP_GRAFANA_VERSION=0.11.6
 RUN MCP_ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "arm64" || echo "x86_64") && \
     curl -fsSL https://github.com/grafana/mcp-grafana/releases/download/v${MCP_GRAFANA_VERSION}/mcp-grafana_Linux_${MCP_ARCH}.tar.gz \
     | tar xz -C /usr/local/bin mcp-grafana && \
