@@ -132,6 +132,27 @@ def test_aggregate_excludes_nonzero_agent_exit_trials() -> None:
     assert model["pass_rate"] == 1.0
 
 
+def test_aggregate_counts_step_limit_nonzero_exit_as_valid_failure(tmp_path: Path) -> None:
+    trial_dir = tmp_path / "task-a__abc123" / "agent" / "command-0"
+    trial_dir.mkdir(parents=True)
+    (trial_dir / "stdout.txt").write_text("RuntimeError: Agent exceeded max step limit (50)\n")
+
+    trial = _trial("gpt-5.4", "off", "task-a", 0.0)
+    trial["exception_info"] = {
+        "exception_type": "NonZeroAgentExitCodeError",
+        "exception_message": "Agent exited with code 1",
+    }
+    trial["__result_path"] = str(trial_dir.parent.parent / "result.json")
+
+    data = report.aggregate([trial], {"task-a": "prometheus_query"})
+
+    model = data["models"][0]
+    assert model["n_valid_trials"] == 1
+    assert model["pass_hat_rate"] == 0.0
+    assert model["pass_rate"] == 0.0
+    assert model["mean_score"] == 0.0
+
+
 @pytest.mark.parametrize(
     ("traceback",),
     [
