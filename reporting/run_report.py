@@ -359,6 +359,7 @@ def load_trials(job_dir: Path) -> list[JsonDict]:
             result = json.loads(result_path.read_text())
         except Exception:
             continue
+        result["__result_path"] = str(result_path.resolve())
         if classify_trial_artifact(trial_dir, result) != "complete":
             continue
 
