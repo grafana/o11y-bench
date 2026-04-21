@@ -1,6 +1,6 @@
 # /// script
 # dependencies = [
-#   "litellm==1.83.0",
+#   "litellm==1.83.10",
 #   "mcp>=1.9.0",
 # ]
 # ///
@@ -336,7 +336,7 @@ async def run_agent() -> None:
                 }
                 if reasoning_effort != "off":
                     litellm_kwargs["reasoning_effort"] = reasoning_effort
-                else:
+                elif "claude-opus-4-7" not in model:
                     litellm_kwargs["temperature"] = temperature
 
                 step = 0
