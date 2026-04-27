@@ -215,6 +215,22 @@ Use either `--agent` or `--agent-import-path`, not both.
 The LangChain agent in this repo is intentionally a simple example of wiring a custom Harbor agent
 entrypoint through the existing benchmark flow.
 
+### gcx CLI Mode
+
+By default, agents interact with Grafana through mcp-grafana (MCP tools). To benchmark
+agents using the gcx CLI instead, use the `GcxOpenCodeAgent` agent class:
+
+```bash
+mise run bench:job -- --model anthropic/claude-sonnet-4-6 --task-name query-cpu-metrics --agent-import-path agents.gcx_opencode_agent:GcxOpenCodeAgent
+```
+
+This runs OpenCode with gcx and gcx skills pre-installed in the container, but
+with MCP tools stripped so the agent can only reach Grafana through gcx.
+The container image has `GRAFANA_SERVER` and `GRAFANA_ORG_ID` set so gcx
+connects to the sidecar Grafana automatically.
+
+This agent can only run models available in OpenCode.
+
 ## Running Your Own Models
 
 If your model is reachable through Harbor and LiteLLM, pass it as `provider/model`.
