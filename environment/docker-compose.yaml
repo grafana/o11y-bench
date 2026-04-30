@@ -18,6 +18,8 @@ services:
       LOKI_URL: "http://o11y-stack-${COMPOSE_PROJECT_NAME}:3100"
       TEMPO_URL: "http://o11y-stack-${COMPOSE_PROJECT_NAME}:3200"
       MCP_URL: "http://o11y-stack-${COMPOSE_PROJECT_NAME}:8080/mcp"
+      GRAFANA_SERVER: "http://o11y-stack-${COMPOSE_PROJECT_NAME}:3000" # for gcx
+      GRAFANA_ORG_ID: "1" # for gcx
     networks:
       harbor-shared: {}
 
