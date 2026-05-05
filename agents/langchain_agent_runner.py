@@ -170,10 +170,12 @@ def convert_messages_to_steps(
             )
 
     flush_pending()
+    session_id = str(uuid.uuid4())
 
     return {
-        "schema_version": "ATIF-v1.6",
-        "session_id": str(uuid.uuid4()),
+        "schema_version": "ATIF-v1.7",
+        "session_id": session_id,
+        "trajectory_id": str(uuid.uuid4()),
         "agent": {
             "name": "o11y-bench-langchain",
             "version": "1.0.0",
@@ -187,8 +189,10 @@ def convert_messages_to_steps(
             "total_cached_tokens": 0,
             "total_cost_usd": 0.0,
             "total_steps": len(steps),
-            "total_tool_calls": tool_call_count,
-            "reasoning_effort": os.environ.get("REASONING_EFFORT", "off"),
+            "extra": {
+                "total_tool_calls": tool_call_count,
+                "reasoning_effort": os.environ.get("REASONING_EFFORT", "off"),
+            },
         },
     }
 

@@ -74,3 +74,51 @@ def test_generate_report_uses_trial_config_reasoning_effort(tmp_path) -> None:
     html = run_report.generate_report(job_dir, tasks_dir=tasks_dir)
 
     assert "GPT 5.4 Nano (high)" in html
+
+
+def test_load_atif_trajectory_accepts_legacy_harbor_results(tmp_path) -> None:
+    trajectory = tmp_path / "trajectory.json"
+    trajectory.write_text(
+        json.dumps(
+            {
+                "schema_version": "ATIF-v1.6",
+                "session_id": "legacy-run",
+                "agent": {"name": "o11y-bench", "version": "1.0.0"},
+                "steps": [
+                    {"step_id": 1, "source": "user", "message": "Find errors"},
+                    {
+                        "step_id": 2,
+                        "source": "agent",
+                        "message": "(tool use)",
+                        "tool_calls": [
+                            {
+                                "tool_call_id": "call-1",
+                                "function_name": "query_loki",
+                                "arguments": {"query": "{service=\"api\"}"},
+                            }
+                        ],
+                        "observation": {
+                            "results": [
+                                {
+                                    "source_call_id": "call-1",
+                                    "content": "error log",
+                                }
+                            ]
+                        },
+                    },
+                ],
+                "final_metrics": {
+                    "total_prompt_tokens": 10,
+                    "total_completion_tokens": 5,
+                    "total_tool_calls": 1,
+                    "reasoning_effort": "off",
+                },
+            }
+        )
+    )
+
+    transcript = run_report._load_atif_trajectory(trajectory)
+
+    assert [message["type"] for message in transcript] == ["user", "assistant", "tool_result"]
+    assert transcript[1]["message"]["content"][0]["name"] == "query_loki"
+    assert transcript[2]["content"] == "error log"
