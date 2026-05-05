@@ -231,6 +231,38 @@ connects to the sidecar Grafana automatically.
 
 This agent can only run models available in OpenCode.
 
+### Using A Local gcx Build
+
+To test gcx changes before they are on main, you can use a locally-built binary
+instead of the published release.
+
+Set `LOCAL_GCX` to the path of your binary when running preflight:
+
+```bash
+LOCAL_GCX=~/path/to/gcx/bin/gcx mise run setup:preflight
+```
+
+Or copy it into the build context manually:
+
+```bash
+cp ~/path/to/gcx/bin/gcx environment/gcx
+mise run setup:preflight
+```
+
+Either way, the Docker image will use your local binary instead of downloading
+from GitHub. The `environment/gcx` file is gitignored and cleaned up after build.
+
+The binary must be a **Linux** executable matching the Docker image architecture.
+If you're on macOS, a native `go build` produces a binary that won't run inside
+the container. Build the binary for linux first:
+
+```bash
+cd ~/workspace/gcx && GOOS=linux GOARCH=arm64 go build -o bin/gcx-linux ./cmd/gcx
+LOCAL_GCX=~/path/to/gcx/bin/gcx-linux mise run setup:preflight
+```
+
+Use `GOARCH=amd64` if your Docker is running x86_64 images.
+
 ## Running Your Own Models
 
 If your model is reachable through Harbor and LiteLLM, pass it as `provider/model`.
