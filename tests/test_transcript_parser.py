@@ -20,7 +20,7 @@ def test_parse_atif_trajectory_accepts_legacy_harbor_results(tmp_path) -> None:
                             {
                                 "tool_call_id": "call-1",
                                 "function_name": "query_loki",
-                                "arguments": {"query": "{service=\"api\"}"},
+                                "arguments": {"query": '{service="api"}'},
                             }
                         ],
                         "observation": {
