@@ -151,7 +151,7 @@ def make_atif_step(
     observation: dict[str, Any] | None = None,
     metrics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build an ATIF-v1.6 step dict."""
+    """Build an ATIF-v1.7 step dict."""
     step: dict[str, Any] = {
         "step_id": step_id,
         "timestamp": datetime.now(UTC).isoformat(),
@@ -275,6 +275,7 @@ async def run_agent() -> None:
     agent_dir.mkdir(parents=True, exist_ok=True)
 
     session_id = str(uuid.uuid4())
+    trajectory_id = str(uuid.uuid4())
     atif_steps: list[dict[str, Any]] = []
     tool_defs: list[dict[str, Any]] = []
     stats = {"input": 0, "output": 0, "cache": 0, "cost": 0.0}
@@ -285,8 +286,9 @@ async def run_agent() -> None:
     def flush_trajectory() -> None:
         """Write trajectory to disk after each step so partial work survives kills."""
         trajectory = {
-            "schema_version": "ATIF-v1.6",
+            "schema_version": "ATIF-v1.7",
             "session_id": session_id,
+            "trajectory_id": trajectory_id,
             "agent": {
                 "name": "o11y-bench",
                 "version": "1.0.0",
@@ -300,9 +302,11 @@ async def run_agent() -> None:
                 "total_cached_tokens": stats["cache"],
                 "total_cost_usd": stats["cost"],
                 "total_steps": step_id,
-                "total_tool_calls": tool_call_count,
-                "reasoning_effort": reasoning_effort,
-                "elapsed_seconds": time.time() - start,
+                "extra": {
+                    "total_tool_calls": tool_call_count,
+                    "reasoning_effort": reasoning_effort,
+                    "elapsed_seconds": time.time() - start,
+                },
             },
         }
         (agent_dir / "trajectory.json").write_text(json.dumps(trajectory, indent=2))
