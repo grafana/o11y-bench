@@ -106,6 +106,18 @@ fi
 docker network inspect o11y-bench-shared >/dev/null 2>&1 || docker network create o11y-bench-shared >/dev/null
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# If LOCAL_GCX points to a binary, copy it into the build context so the
+# Dockerfile picks it up instead of downloading from GitHub.
+# Trap ensures cleanup even if the build fails, so a stale binary doesn't
+# silently get used on the next build.
+if [ -n "${LOCAL_GCX:-}" ]; then
+  echo "Using local gcx binary: $LOCAL_GCX"
+  cp "$LOCAL_GCX" "$ROOT/environment/gcx"
+  chmod +x "$ROOT/environment/gcx"
+  trap 'rm -f "$ROOT/environment/gcx"' EXIT INT TERM
+fi
+
 echo "Building shared Harbor main image: o11y-bench-main:latest"
 docker build -t o11y-bench-main:latest -f "$ROOT/environment/Dockerfile" "$ROOT/environment" >/dev/null
 echo "Building shared Harbor sidecar image: o11y-bench-o11y-stack:latest"
