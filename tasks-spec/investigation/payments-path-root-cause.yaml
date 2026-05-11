@@ -19,6 +19,7 @@ checks:
   params:
     prefix_min_chars: 8
     mode: tool_trace_id
+    bash_command_contains: "gcx traces"
   name: Response cites a trace ID that appears in Tempo tool results
 rubric:
 - criterion: The final response states 5xx request-log count for the dominant payments path accurately.

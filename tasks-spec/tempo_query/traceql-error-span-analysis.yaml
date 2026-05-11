@@ -17,6 +17,7 @@ checks:
     prefix_min_chars: 8
     assistant_scope: all
     mode: tool_trace_id
+    bash_command_contains: "gcx traces"
   name: Response cites a trace ID that appears in Tempo tool results
 rubric:
 - criterion: The final response discusses span-level evidence (span name, attribute, or status code - not only HTTP or service names)

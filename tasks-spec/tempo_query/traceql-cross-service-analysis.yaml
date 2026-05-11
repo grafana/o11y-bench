@@ -17,6 +17,7 @@ checks:
   params:
     prefix_min_chars: 8
     mode: tool_trace_id
+    bash_command_contains: "gcx traces"
     additional_tool_names:
     - query_loki_logs
   name: Response cites a trace ID that appears in tool results

@@ -15,6 +15,7 @@ checks:
   params:
     prefix_min_chars: 8
     mode: tool_trace_id
+    bash_command_contains: "gcx traces"
   name: Response cites a trace ID that appears in Tempo tool results
 rubric:
 - criterion: The final response explains why payment-service shows the highest erroring-span rate for POST /api/payments using span or metric evidence from the transcript

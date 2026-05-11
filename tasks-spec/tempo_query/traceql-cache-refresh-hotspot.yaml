@@ -17,6 +17,7 @@ checks:
   params:
     prefix_min_chars: 8
     mode: tool_trace_id
+    bash_command_contains: "gcx traces"
   name: Response cites a trace ID that appears in Tempo tool results
 rubric:
 - criterion: The final response identifies the `refresh auth cache` span (or an equivalent auth-cache refresh operation) inside user-service as the dominant hotspot on slow GET `/api/users` traces, rather than stopping at only a generic service-level summary
