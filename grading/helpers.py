@@ -53,11 +53,20 @@ def iter_tool_calls(transcript: Transcript) -> Iterator[ToolCall]:
             yield from msg.tool_calls
 
 
-def tool_call_id_to_name(transcript: Transcript) -> dict[str, str]:
-    out: dict[str, str] = {}
+def tool_call_id_to_tool_calls(transcript: Transcript) -> dict[str, ToolCall]:
+    out: dict[str, ToolCall] = {}
     for tool_call in iter_tool_calls(transcript):
-        out[tool_call.id] = tool_call.name
+        out[tool_call.id] = tool_call
     return out
+
+
+def bash_command_matches(tool_call: ToolCall, command_substrings: set[str]) -> bool:
+    if tool_call.name != "bash":
+        return False
+    command = tool_call.arguments.get("command", "")
+    if not isinstance(command, str):
+        return False
+    return any(substr in command for substr in command_substrings)
 
 
 def as_name_set(raw: str | list[str] | tuple[str, ...] | set[str] | None) -> set[str]:

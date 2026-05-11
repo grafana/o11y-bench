@@ -11,10 +11,11 @@ from grading.helpers import (
     as_name_set,
     assistant_scope_note,
     assistant_text_blobs,
+    bash_command_matches,
     require_stack_url,
     response_cites_trace_id_prefix,
     tempo_tool_matches_name,
-    tool_call_id_to_name,
+    tool_call_id_to_tool_calls,
     trace_ids_from_tool_content,
 )
 from grading.models import (
@@ -73,20 +74,28 @@ def validate_tool_trace_id_grounding(
         {"additional_tool_names": params.additional_tool_names}
     )
 
-    call_id_to_name = tool_call_id_to_name(transcript)
+    tool_calls = tool_call_id_to_tool_calls(transcript)
+    bash_patterns = (
+        as_name_set(params.bash_command_contains) if params.bash_command_contains else None
+    )
+
     found_ids: set[str] = set()
     for msg in transcript.messages:
         if msg.role != "tool" or not msg.tool_results:
             continue
         for tool_result in msg.tool_results:
-            name = call_id_to_name.get(tool_result.tool_call_id, "")
-            if name not in extra_tool_names and not tempo_tool_matches_name(
-                name,
-                allowed_names if allowed_names else None,
-                params.tool_name_prefix,
+            tc = tool_calls.get(tool_result.tool_call_id)
+            name = tc.name if tc else ""
+            if (
+                name in extra_tool_names
+                or tempo_tool_matches_name(
+                    name,
+                    allowed_names if allowed_names else None,
+                    params.tool_name_prefix,
+                )
+                or (bash_patterns and tc and bash_command_matches(tc, bash_patterns))
             ):
-                continue
-            found_ids.update(trace_ids_from_tool_content(tool_result.content))
+                found_ids.update(trace_ids_from_tool_content(tool_result.content))
 
     if not found_ids:
         scope = (
@@ -96,6 +105,8 @@ def validate_tool_trace_id_grounding(
         )
         if extra_tool_names:
             scope += f" + {sorted(extra_tool_names)}"
+        if bash_patterns:
+            scope += f" + bash commands containing {sorted(bash_patterns)}"
         return 0.0, f"No hex trace IDs found in tool results{scope}."
 
     text_blobs = assistant_text_blobs(transcript, params.assistant_scope)

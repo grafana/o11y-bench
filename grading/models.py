@@ -221,6 +221,8 @@ class ToolTraceIdGroundingParams(SpecModel):
     tool_name: str | list[str] | None = None
     tool_name_prefix: str = "tempo_"
     additional_tool_names: str | list[str] | None = None
+    # when agents use bash commands instead of tool calls, look for these strings in the command
+    bash_command_contains: str | list[str] | None = None
 
 
 class DashboardStateParams(DashboardSelector):
