@@ -16,8 +16,8 @@ checks:
   params:
     prefix_min_chars: 8
     assistant_scope: all
-    mode: tool_trace_id
-  name: Response cites a trace ID that appears in Tempo tool results
+    mode: trace_id
+  name: Response cites a trace ID that appears in tool results
 rubric:
 - criterion: The final response distinguishes the span where the error originates from upstream spans that only reflect the failed HTTP response
   weight: 10.0

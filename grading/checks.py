@@ -7,14 +7,10 @@ from grading.env_context import (
     resolve_grafana_datasource,
 )
 from grading.helpers import (
-    additional_trace_id_tool_names,
-    as_name_set,
     assistant_scope_note,
     assistant_text_blobs,
     require_stack_url,
     response_cites_trace_id_prefix,
-    tempo_tool_matches_name,
-    tool_call_id_to_name,
     trace_ids_from_tool_content,
 )
 from grading.models import (
@@ -23,7 +19,7 @@ from grading.models import (
     DatasourceDetailStateParams,
     DatasourceInventoryStateParams,
     TempoTraceServiceInventoryStateParams,
-    ToolTraceIdGroundingParams,
+    TraceIdGroundingParams,
     Transcript,
 )
 
@@ -50,8 +46,8 @@ def run_check(
     ctx: VerifierContext | None,
 ) -> tuple[float, str]:
     match check.params:
-        case ToolTraceIdGroundingParams():
-            return validate_tool_trace_id_grounding(check.params, transcript)
+        case TraceIdGroundingParams():
+            return validate_trace_id_grounding(check.params, transcript)
         case DashboardStateParams():
             return validate_dashboard_state(check.params, transcript, ctx)
         case DatasourceInventoryStateParams():
@@ -64,39 +60,19 @@ def run_check(
             return 0.0, f"Unsupported check params mode {check.params.mode!r}."
 
 
-def validate_tool_trace_id_grounding(
-    params: ToolTraceIdGroundingParams,
+def validate_trace_id_grounding(
+    params: TraceIdGroundingParams,
     transcript: Transcript,
 ) -> tuple[float, str]:
-    allowed_names = as_name_set(params.tool_name) if params.tool_name else None
-    extra_tool_names = additional_trace_id_tool_names(
-        {"additional_tool_names": params.additional_tool_names}
-    )
-
-    call_id_to_name = tool_call_id_to_name(transcript)
     found_ids: set[str] = set()
     for msg in transcript.messages:
         if msg.role != "tool" or not msg.tool_results:
             continue
         for tool_result in msg.tool_results:
-            name = call_id_to_name.get(tool_result.tool_call_id, "")
-            if name not in extra_tool_names and not tempo_tool_matches_name(
-                name,
-                allowed_names if allowed_names else None,
-                params.tool_name_prefix,
-            ):
-                continue
             found_ids.update(trace_ids_from_tool_content(tool_result.content))
 
     if not found_ids:
-        scope = (
-            f" ({sorted(allowed_names)})"
-            if allowed_names
-            else f" (prefix {params.tool_name_prefix!r})"
-        )
-        if extra_tool_names:
-            scope += f" + {sorted(extra_tool_names)}"
-        return 0.0, f"No hex trace IDs found in tool results{scope}."
+        return 0.0, "No hex trace IDs found in any tool results."
 
     text_blobs = assistant_text_blobs(transcript, params.assistant_scope)
     if not text_blobs:

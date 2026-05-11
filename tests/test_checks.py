@@ -112,12 +112,56 @@ def test_run_checks_dispatches_trace_grounding() -> None:
                     "name": "trace grounding",
                     "weight": 1.0,
                     "type": "grounding",
-                    "params": {"mode": "tool_trace_id", "prefix_min_chars": 8},
+                    "params": {"mode": "trace_id", "prefix_min_chars": 8},
                 }
             )
         ],
         _tool_grounded_trace_response(),
         VerifierContext(tempo_url="http://tempo"),
+    )
+
+    assert scores["trace grounding"] == 1.0
+    assert "grounded in tool results" in explanations["trace grounding"]
+
+
+def test_run_checks_trace_grounding_accepts_non_tempo_tool_source() -> None:
+    transcript = Transcript(
+        messages=[
+            Message(
+                role="assistant",
+                tool_calls=[
+                    ToolCall(id="loki-1", name="query_loki_logs", arguments={"query": "ignored"})
+                ],
+            ),
+            Message(
+                role="tool",
+                tool_results=[
+                    ToolResult(
+                        tool_call_id="loki-1",
+                        content='{"traceID":"2f0d253c538f68595d959a8a39d7a6a0","level":"error"}',
+                    )
+                ],
+            ),
+            Message(
+                role="assistant",
+                content="A representative trace from the logs is 2f0d253c538f6859.",
+            ),
+        ]
+    )
+
+    scores, explanations = run_checks(
+        [
+            CheckItem.model_validate(
+                {
+                    "name": "trace grounding",
+                    "weight": 1.0,
+                    "type": "grounding",
+                    "params": {"mode": "trace_id", "prefix_min_chars": 8},
+                }
+            )
+        ],
+        transcript,
+        VerifierContext(),
     )
 
     assert scores["trace grounding"] == 1.0

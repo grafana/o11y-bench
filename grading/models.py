@@ -214,13 +214,10 @@ class DashboardItemExpectation(SpecModel):
         raise ValueError("Dashboard item expectations must include at least one constraint.")
 
 
-class ToolTraceIdGroundingParams(SpecModel):
-    mode: Literal["tool_trace_id"]
+class TraceIdGroundingParams(SpecModel):
+    mode: Literal["trace_id"]
     prefix_min_chars: int = 8
     assistant_scope: Literal["final", "all"] = "final"
-    tool_name: str | list[str] | None = None
-    tool_name_prefix: str = "tempo_"
-    additional_tool_names: str | list[str] | None = None
 
 
 class DashboardStateParams(DashboardSelector):
@@ -285,7 +282,7 @@ class TempoTraceServiceInventoryStateParams(SpecModel):
 
 
 type CheckParams = Annotated[
-    ToolTraceIdGroundingParams
+    TraceIdGroundingParams
     | DashboardStateParams
     | DatasourceInventoryStateParams
     | DatasourceDetailStateParams
@@ -454,7 +451,7 @@ def collapse_whitespace(text: str) -> str:
 
 def check_type_for_params(params: CheckParams) -> Literal["grounding", "state"]:
     match params:
-        case ToolTraceIdGroundingParams():
+        case TraceIdGroundingParams():
             return "grounding"
         case (
             DashboardStateParams()
