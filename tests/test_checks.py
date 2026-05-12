@@ -182,7 +182,11 @@ def test_run_checks_trace_grounding_matches_snake_case_trace_id_key() -> None:
                 tool_results=[
                     ToolResult(
                         tool_call_id="loki-1",
-                        content='{"level":"error","trace_id":"2f0d253c538f68595d959a8a39d7a6a0","message":"upstream service error"}',
+                        content=(
+                            '{"level":"error",'
+                            '"trace_id":"2f0d253c538f68595d959a8a39d7a6a0",'
+                            '"message":"upstream service error"}'
+                        ),
                     )
                 ],
             ),
