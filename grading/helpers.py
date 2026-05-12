@@ -5,9 +5,12 @@ from grading.env_context import synthetic_eval_time_unix
 from grading.models import Transcript
 
 _TRACE_ID_HEX_32 = re.compile(r"(?<![0-9a-fA-F])([0-9a-fA-F]{32})(?![0-9a-fA-F])")
-# Tempo search JSON often omits a leading zero (31 hex chars); get-trace uses 32.
+# _TRACE_ID_HEX_32 catches most trace IDs, but only matches exactly 32 hex chars.
+# Tempo search JSON sometimes omits a leading zero (31 chars), so this pattern
+# looks for known key names to pick those up too, but only in the JSON format we
+# know that trace commands use.
 _TRACE_ID_JSON = re.compile(
-    r'"(?:traceID|traceId)"\s*:\s*"([0-9a-fA-F]{31,32})"',
+    r'"trace[_]?id"\s*:\s*"([0-9a-fA-F]{31,32})"',
     re.IGNORECASE,
 )
 
