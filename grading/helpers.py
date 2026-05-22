@@ -123,6 +123,8 @@ def tempo_tool_matches_name(
 ) -> bool:
     if allowed_names is not None:
         return tool_name in allowed_names
+    if name_prefix == "":
+        return True
     return tool_name.startswith(name_prefix)
 
 

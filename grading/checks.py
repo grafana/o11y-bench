@@ -89,11 +89,12 @@ def validate_tool_trace_id_grounding(
             found_ids.update(trace_ids_from_tool_content(tool_result.content))
 
     if not found_ids:
-        scope = (
-            f" ({sorted(allowed_names)})"
-            if allowed_names
-            else f" (prefix {params.tool_name_prefix!r})"
-        )
+        if allowed_names:
+            scope = f" ({sorted(allowed_names)})"
+        elif params.tool_name_prefix:
+            scope = f" (prefix {params.tool_name_prefix!r})"
+        else:
+            scope = ""
         if extra_tool_names:
             scope += f" + {sorted(extra_tool_names)}"
         return 0.0, f"No hex trace IDs found in tool results{scope}."
