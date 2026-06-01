@@ -23,6 +23,12 @@ from .harbor import run as run_harbor
 from .resume import compute_task_checksums
 from .run import execute_job, execute_regrade, execute_suite, finalize_job_dir
 from .scenario_clock import SCENARIO_TIME_ENV, current_scenario_time_iso
+from .sigil_export import (
+    SigilExportOptions,
+    SigilExportResult,
+    SigilLiveExporter,
+    export_job_to_sigil,
+)
 
 
 def _extract_option(args: list[str], *names: str) -> str | None:
@@ -82,6 +88,26 @@ def main() -> None:
     )
     job_parser.add_argument("--dry-run", action="store_true")
     job_parser.add_argument("--quiet", action="store_true")
+    job_parser.add_argument(
+        "--sigil-experiment-export",
+        action="store_true",
+        help="Export the completed job to Sigil as an external experiment",
+    )
+    job_parser.add_argument(
+        "--sigil-api", default=os.environ.get("SIGIL_API_ENDPOINT", "http://localhost:8080")
+    )
+    job_parser.add_argument("--sigil-tenant", default=os.environ.get("SIGIL_TENANT_ID", "fake"))
+    job_parser.add_argument("--sigil-run-id")
+    job_parser.add_argument("--sigil-name")
+    job_parser.add_argument("--sigil-description", default="")
+    job_parser.add_argument("--sigil-tag", action="append", default=[])
+    job_parser.add_argument(
+        "--sigil-sdk-path",
+        type=Path,
+        default=Path(os.environ["SIGIL_SDK_PYTHON_PATH"])
+        if os.environ.get("SIGIL_SDK_PYTHON_PATH")
+        else None,
+    )
 
     # --- finalize: stamp checksums + generate per-job report ---
     finalize_parser = subparsers.add_parser(
@@ -101,6 +127,26 @@ def main() -> None:
     regrade_parser.add_argument("--job-name")
     regrade_parser.add_argument("--quiet", action="store_true")
 
+    # --- sigil-export: publish completed job artifacts to Sigil ---
+    sigil_parser = subparsers.add_parser(
+        "sigil-export", help="Export a completed benchmark job to a Sigil experiment"
+    )
+    sigil_parser.add_argument("job_dir", type=Path)
+    sigil_parser.add_argument("--path", type=Path)
+    sigil_parser.add_argument("--api", default=os.environ.get("SIGIL_API_ENDPOINT", "http://localhost:8080"))
+    sigil_parser.add_argument("--tenant", default=os.environ.get("SIGIL_TENANT_ID", "fake"))
+    sigil_parser.add_argument("--run-id")
+    sigil_parser.add_argument("--name")
+    sigil_parser.add_argument("--description", default="")
+    sigil_parser.add_argument("--tag", action="append", default=[])
+    sigil_parser.add_argument(
+        "--sdk-path",
+        type=Path,
+        default=Path(os.environ["SIGIL_SDK_PYTHON_PATH"])
+        if os.environ.get("SIGIL_SDK_PYTHON_PATH")
+        else None,
+    )
+
     args = _parse_args(parser)
 
     match args.command:
@@ -114,6 +160,8 @@ def main() -> None:
             _cmd_finalize(args)
         case "regrade":
             _cmd_regrade(args)
+        case "sigil-export":
+            _cmd_sigil_export(args)
 
 
 def _parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
@@ -199,7 +247,21 @@ def _cmd_job(args: argparse.Namespace) -> None:
     if not args.dry_run:
         run_preflight(quiet=args.quiet)
 
-    result = execute_job(spec, dry_run=args.dry_run, quiet=args.quiet)
+    sigil_exporter = None
+    if getattr(args, "sigil_experiment_export", False) and not args.dry_run:
+        sigil_exporter = SigilLiveExporter(
+            spec.jobs_dir / spec.job_name,
+            spec.tasks_dir,
+            _sigil_options_from_args(args),
+        )
+
+    execute_kwargs = {"dry_run": args.dry_run, "quiet": args.quiet}
+    if sigil_exporter is not None:
+        execute_kwargs["sigil_exporter"] = sigil_exporter
+    result = execute_job(spec, **execute_kwargs)
+    export_result = getattr(sigil_exporter, "last_result", None)
+    if export_result is not None:
+        _print_sigil_export_result(export_result)
     if result.harbor_exit_code and result.harbor_exit_code != 0:
         raise SystemExit(result.harbor_exit_code)
 
@@ -233,6 +295,55 @@ def _cmd_regrade(args: argparse.Namespace) -> None:
             raise SystemExit(f"No job dir found for --job-name {args.job_name!r} under {target}")
         target = latest
     execute_regrade(target, tasks_dir=tasks_dir, quiet=args.quiet)
+
+
+def _cmd_sigil_export(args: argparse.Namespace) -> None:
+    _export_job_result_to_sigil(
+        args,
+        normalize_repo_path(ROOT, args.job_dir),
+        _resolve_tasks_path(args.path),
+    )
+
+
+def _export_job_result_to_sigil(
+    args: argparse.Namespace, job_dir: Path, tasks_dir: Path
+) -> SigilExportResult:
+    result = export_job_to_sigil(job_dir, tasks_dir, _sigil_options_from_args(args))
+    print(_format_sigil_export_result(result))
+    return result
+
+
+def _format_sigil_export_result(result: SigilExportResult) -> str:
+    return (
+        f"Exported {result.generation_count} generation(s), {result.score_count} score(s) "
+        f"to Sigil run {result.run_id}\nView in Sigil: {result.url}"
+    )
+
+
+def _print_sigil_export_result(result: SigilExportResult) -> None:
+    print(_format_sigil_export_result(result))
+
+
+def _sigil_options_from_args(args: argparse.Namespace) -> SigilExportOptions:
+    # The `job` and `sigil-export` subparsers name the same options differently
+    # (`--sigil-api` vs `--api`), so accept either spelling.
+    def _opt(*names: str, default: str = "") -> str:
+        for name in names:
+            value = getattr(args, name, None)
+            if value:
+                return str(value)
+        return default
+
+    sdk_path = getattr(args, "sdk_path", None) or getattr(args, "sigil_sdk_path", None)
+    return SigilExportOptions(
+        api=_opt("api", "sigil_api", default="http://localhost:8080"),
+        tenant=_opt("tenant", "sigil_tenant", default="fake"),
+        run_id=_opt("run_id", "sigil_run_id"),
+        name=_opt("name", "sigil_name"),
+        description=_opt("description", "sigil_description"),
+        tags=list(getattr(args, "tag", None) or getattr(args, "sigil_tag", None) or []),
+        sdk_path=Path(sdk_path) if sdk_path is not None else None,
+    )
 
 
 def _resolve_tasks_path(path: Path | None) -> Path:

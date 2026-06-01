@@ -126,6 +126,33 @@ def test_execute_job_resumes_from_saved_config(monkeypatch, tmp_path) -> None:
     assert kwargs == {"forward_signals": False}
 
 
+def test_run_harbor_with_live_export_starts_before_harbor_and_finishes_after(monkeypatch) -> None:
+    events: list[str] = []
+
+    class FakeExporter:
+        def start(self):
+            events.append("start")
+
+        def finish(self, *, status: str, error: str = ""):
+            events.append(f"finish:{status}:{error}")
+
+    def fake_run_harbor(command: list[str], **kwargs: object) -> int:
+        events.append("harbor")
+        assert command == ["harbor", "run"]
+        assert kwargs == {"forward_signals": False}
+        return 0
+
+    monkeypatch.setattr(run, "run_harbor", fake_run_harbor)
+
+    exit_code = run._run_harbor_with_live_export(
+        ["harbor", "run"],
+        sigil_exporter=FakeExporter(),
+    )
+
+    assert exit_code == 0
+    assert events == ["start", "harbor", "finish:succeeded:"]
+
+
 def test_finalize_job_dir_sanitizes_artifact_paths(monkeypatch, tmp_path) -> None:
     tasks_dir = tmp_path / "tasks"
     task_dir = tasks_dir / "promql-error-rate"
@@ -443,6 +470,71 @@ def test_cmd_job_rejects_agent_and_agent_import_path_together() -> None:
 
     with pytest.raises(SystemExit, match="Use either --agent or --agent-import-path"):
         cli._cmd_job(args)
+
+
+def test_cmd_job_passes_live_sigil_exporter_when_flag_enabled(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "run_preflight", lambda *, quiet=False: None)
+
+    execute_calls: list[tuple[config.JobSpec, object]] = []
+    exporter_calls: list[tuple[object, object, object]] = []
+
+    def fake_execute_job(
+        spec: config.JobSpec,
+        *,
+        dry_run: bool = False,
+        quiet: bool = False,
+        sigil_exporter=None,
+    ):
+        execute_calls.append((spec, sigil_exporter))
+        return run.JobResult(
+            status="ran",
+            job_name=spec.job_name,
+            report_path=spec.jobs_dir / spec.job_name / "run_report.html",
+        )
+
+    def fake_live_exporter(job_dir, tasks_dir, options):
+        exporter_calls.append((job_dir, tasks_dir, options))
+        return "live-exporter"
+
+    monkeypatch.setattr(cli, "execute_job", fake_execute_job)
+    monkeypatch.setattr(cli, "SigilLiveExporter", fake_live_exporter)
+
+    args = argparse.Namespace(
+        model="openai/gpt-5.4-nano",
+        agent="opencode",
+        agent_import_path=config.DEFAULT_AGENT_IMPORT_PATH,
+        reasoning_effort="off",
+        jobs_dir=config.ROOT / "jobs",
+        job_name=None,
+        path=None,
+        n_attempts=1,
+        n_concurrent=1,
+        override_cpus=None,
+        override_memory_mb=None,
+        override_storage_mb=None,
+        task_name=["query-cpu-metrics"],
+        dry_run=False,
+        quiet=True,
+        sigil_experiment_export=True,
+        sigil_api="http://localhost:8080",
+        sigil_tenant="fake",
+        sigil_run_id="o11y-run-1",
+        sigil_name="o11y run",
+        sigil_description="",
+        sigil_tag=["o11y-bench", "opencode"],
+        sigil_sdk_path=None,
+    )
+
+    cli._cmd_job(args)
+
+    assert len(execute_calls) == 1
+    assert execute_calls[0][1] == "live-exporter"
+    assert len(exporter_calls) == 1
+    job_dir, tasks_dir, options = exporter_calls[0]
+    assert job_dir == config.ROOT / "jobs" / "openai-gpt-5-4-nano-off-opencode-k1"
+    assert tasks_dir == config.TASKS_DIR
+    assert options.run_id == "o11y-run-1"
+    assert options.tags == ["o11y-bench", "opencode"]
 
 
 def test_regrade_job_dir_updates_verifier_outputs(monkeypatch, tmp_path) -> None:

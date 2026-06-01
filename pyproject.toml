@@ -17,6 +17,17 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.optional-dependencies]
+# Opt-in: exporting benchmark runs to Sigil. Not installed by default and has no
+# effect on the core benchmark. Enable with `mise run sigil:setup`.
+sigil = ["sigil-sdk>=0.7.0"]
+
+[tool.uv.sources]
+# Use the local (unpublished) Sigil SDK checkout for the `sigil` extra. Assumes
+# sigil-sdk is a sibling of this repo; override with `uv sync --extra sigil
+# --no-sources` once the SDK is published to PyPI.
+sigil-sdk = { path = "../sigil-sdk/python", editable = true }
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

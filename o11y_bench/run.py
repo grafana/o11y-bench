@@ -78,6 +78,28 @@ def _print_job_summary(result: JobResult) -> None:
     print(f"{result.job_name}: {message}")
 
 
+def _run_harbor_with_live_export(
+    command: list[str],
+    *,
+    sigil_exporter: Any | None,
+) -> int:
+    if sigil_exporter is None:
+        return run_harbor(command, forward_signals=False)
+
+    sigil_exporter.start()
+    exit_code = 1
+    error = ""
+    try:
+        exit_code = run_harbor(command, forward_signals=False)
+        return exit_code
+    except BaseException as exc:
+        error = str(exc)
+        raise
+    finally:
+        status = "succeeded" if exit_code == 0 and not error else "failed"
+        sigil_exporter.finish(status=status, error=error)
+
+
 def _selected_task_names(spec: JobSpec) -> list[str]:
     if spec.task_names:
         return list(spec.task_names)
@@ -490,7 +512,13 @@ def execute_regrade(target_dir: Path, *, tasks_dir: Path, quiet: bool = False) -
         suite_report.write_report(target_dir, tasks_dir=tasks_dir, quiet=quiet)
 
 
-def execute_job(spec: JobSpec, *, dry_run: bool = False, quiet: bool = False) -> JobResult:
+def execute_job(
+    spec: JobSpec,
+    *,
+    dry_run: bool = False,
+    quiet: bool = False,
+    sigil_exporter: Any | None = None,
+) -> JobResult:
     """Single-pass: plan, repair, run harbor, finalize."""
     task_checksums = compute_task_checksums(spec.tasks_dir)
     job_dir = spec.jobs_dir / spec.job_name
@@ -513,7 +541,10 @@ def execute_job(spec: JobSpec, *, dry_run: bool = False, quiet: bool = False) ->
             if quiet:
                 _print_job_summary(result)
             return result
-        fresh_harbor_exit_code = run_harbor(build_command(spec, quiet=quiet), forward_signals=False)
+        fresh_harbor_exit_code = _run_harbor_with_live_export(
+            build_command(spec, quiet=quiet),
+            sigil_exporter=sigil_exporter,
+        )
         report_path = finalize_job_dir(job_dir, spec.tasks_dir, task_checksums)
         result = JobResult(
             "fresh",
@@ -554,6 +585,8 @@ def execute_job(spec: JobSpec, *, dry_run: bool = False, quiet: bool = False) ->
         return result
 
     if not needs_repair and not needs_harbor:
+        if sigil_exporter is not None:
+            sigil_exporter.export_existing()
         result = JobResult("up_to_date", spec.job_name)
         if quiet:
             _print_job_summary(result)
@@ -567,18 +600,20 @@ def execute_job(spec: JobSpec, *, dry_run: bool = False, quiet: bool = False) ->
 
     rerun_harbor_exit_code: int | None = None
     if needs_harbor:
-        rerun_harbor_exit_code = run_harbor(
+        rerun_harbor_exit_code = _run_harbor_with_live_export(
             build_resume_command(
                 str(job_dir / "config.json"),
                 quiet=quiet,
                 harbor_args=spec.harbor_args,
             ),
-            forward_signals=False,
+            sigil_exporter=sigil_exporter,
         )
 
     report_path = finalize_job_dir(job_dir, spec.tasks_dir, task_checksums)
     if report_path and not quiet:
         print(f"Report: {report_path}")
+    if sigil_exporter is not None and not needs_harbor:
+        sigil_exporter.export_existing()
 
     result = JobResult(
         "ran",

@@ -407,6 +407,47 @@ To submit:
 See the [submission repo README](https://huggingface.co/datasets/grafanalabs/o11y-bench-leaderboard) for
 the full submission structure, validation rules, and example layout.
 
+## Export Runs To Sigil (Optional)
+
+[Sigil](https://github.com/grafana/sigil) is Grafana's LLM observability tool. You can
+optionally export benchmark runs to Sigil as **experiments** to browse transcripts, track
+scores over time, and compare runs (e.g. two models or reasoning efforts) side by side.
+
+This is **off by default** and has no effect on the benchmark unless you opt in. Each
+completed trial becomes a Sigil generation (the agent transcript) plus a score (the
+verifier reward), all attributed to one experiment `run_id`.
+
+**1. Enable it** (one-time — installs the Sigil SDK into the venv):
+
+```bash
+mise run sigil:setup
+```
+
+This uses the local Sigil SDK checkout (expected as a sibling directory,
+`../sigil-sdk`). Once the SDK is published you can instead `uv pip install sigil-sdk`.
+
+**2. Run a job with live export** (point at your Sigil stack; defaults to `http://localhost:8080`):
+
+```bash
+mise run bench:job -- --model openai/gpt-5.4-nano --task-name query-cpu-metrics \
+  --sigil-experiment-export --sigil-api http://localhost:8080 --sigil-tenant fake
+```
+
+The experiment is created before Harbor starts and each trial streams to Sigil as it
+finishes; the run is finalized (succeeded/failed) when the job exits, and a link is printed.
+
+**Or export an already-completed job** after the fact:
+
+```bash
+uv run python -m o11y_bench sigil-export jobs/<job-name> --api http://localhost:8080 --tenant fake
+```
+
+Useful flags (both commands): `--sigil-run-id`/`--run-id` (stable id for idempotent
+re-exports), `--sigil-name`/`--name`, `--sigil-tag`/`--tag` (repeatable), and
+`--sigil-sdk-path`/`--sdk-path` (point at a local SDK checkout without installing it).
+Connection defaults also read `SIGIL_API_ENDPOINT`, `SIGIL_TENANT_ID`, and
+`SIGIL_SDK_PYTHON_PATH`.
+
 ## Common Local Commands
 
 ```bash
