@@ -59,6 +59,9 @@ You need all of the following installed locally:
 
 You also need model-provider API keys in your environment.
 
+For local development, copy `.env.sample` to `.env` and fill in the keys you use.
+`mise run ...` commands load `.env` automatically.
+
 Minimum environment variables:
 
 - `ANTHROPIC_API_KEY`
@@ -409,9 +412,9 @@ the full submission structure, validation rules, and example layout.
 
 ## Export Runs To Sigil (Optional)
 
-[Sigil](https://github.com/grafana/sigil) is Grafana's LLM observability tool. You can
-optionally export benchmark runs to Sigil as **experiments** to browse transcripts, track
-scores over time, and compare runs (e.g. two models or reasoning efforts) side by side.
+Sigil is Grafana's LLM observability tool. You can optionally export benchmark runs
+to Sigil as **experiments** to browse transcripts, track scores over time, and
+compare runs (e.g. two models or reasoning efforts) side by side.
 
 This is **off by default** and has no effect on the benchmark unless you opt in. Each
 completed trial becomes a Sigil generation (the agent transcript) plus a score (the
@@ -423,30 +426,86 @@ verifier reward), all attributed to one experiment `run_id`.
 mise run sigil:setup
 ```
 
-This uses the local Sigil SDK checkout (expected as a sibling directory,
-`../sigil-sdk`). Once the SDK is published you can instead `uv pip install sigil-sdk`.
+Then copy `.env.sample` to `.env` and fill in the optional Sigil section for your
+Sigil deployment.
 
-**2. Run a job with live export** (point at your Sigil stack; defaults to `http://localhost:8080`):
+**2. Run a job with live export**:
 
 ```bash
 mise run bench:job -- --model openai/gpt-5.4-nano --task-name query-cpu-metrics \
-  --sigil-experiment-export --sigil-api http://localhost:8080 --sigil-tenant fake
+  --sigil-experiment-export
 ```
 
 The experiment is created before Harbor starts and each trial streams to Sigil as it
 finishes; the run is finalized (succeeded/failed) when the job exits, and a link is printed.
 
+To make the experiment easier to find and compare in Sigil, add a name,
+description, and repeatable tags:
+
+```bash
+mise run bench:job -- \
+  --model openai/gpt-5.4-nano \
+  --task-name query-cpu-metrics \
+  --sigil-experiment-export \
+  --sigil-name "GPT-5.4 nano o11y-bench sample" \
+  --sigil-description "Single-task smoke run exported from o11y-bench with Sigil experiment tracking." \
+  --sigil-tag model:openai/gpt-5.4-nano \
+  --sigil-tag run:smoke \
+  --sigil-tag dataset:o11y-bench
+```
+
+The `o11y-bench` experiment tag is always included automatically.
+
 **Or export an already-completed job** after the fact:
 
 ```bash
-uv run python -m o11y_bench sigil-export jobs/<job-name> --api http://localhost:8080 --tenant fake
+uv run python -m o11y_bench sigil-export jobs/<job-name>
 ```
 
 Useful flags (both commands): `--sigil-run-id`/`--run-id` (stable id for idempotent
-re-exports), `--sigil-name`/`--name`, `--sigil-tag`/`--tag` (repeatable), and
-`--sigil-sdk-path`/`--sdk-path` (point at a local SDK checkout without installing it).
-Connection defaults also read `SIGIL_API_ENDPOINT`, `SIGIL_TENANT_ID`, and
-`SIGIL_SDK_PYTHON_PATH`.
+re-exports), `--sigil-name`/`--name`, `--sigil-tag`/`--tag` (repeatable),
+`--sigil-api`/`--api`, `--sigil-tenant`/`--tenant`, `--sigil-auth-mode`/`--auth-mode`,
+and `--sigil-auth-token`/`--auth-token`.
+
+Configure the Sigil ingest endpoint, tenant/instance ID, and Grafana Cloud
+access-policy token:
+
+```dotenv
+SIGIL_ENDPOINT=https://sigil-prod-<region>.grafana.net
+SIGIL_AUTH_MODE=basic
+SIGIL_AUTH_TENANT_ID=<grafana-cloud-instance-or-tenant-id>
+SIGIL_AUTH_TOKEN=<grafana-cloud-access-policy-token>
+```
+
+Sigil export has two auth planes:
+
+- Ingest plane: generations/transcripts and scores go to `/api/v1/generations:export`
+  and `/api/v1/scores:export`. o11y-bench configures this from `SIGIL_ENDPOINT`,
+  `SIGIL_AUTH_MODE`, `SIGIL_AUTH_TENANT_ID`, and `SIGIL_AUTH_TOKEN` (or the matching
+  `--sigil-*` / `sigil-export` flags).
+- Eval control plane: experiment create/update/finalize calls go to
+  `/api/v1/eval/experiments...`. The Sigil SDK reads `SIGIL_EVAL_*` directly from
+  the environment at call time; o11y-bench does not plumb those values.
+
+For Grafana Cloud, set both planes. The ingest plane uses a Grafana Cloud
+access-policy token. The eval control plane uses a Grafana service-account token
+through the plugin proxy:
+
+```dotenv
+SIGIL_EVAL_ENDPOINT=https://<stack>.grafana.net
+SIGIL_EVAL_PATH_PREFIX=/api/plugins/grafana-sigil-app/resources
+SIGIL_EVAL_AUTH_TOKEN=<grafana-service-account-token>
+```
+
+`SIGIL_EXPERIMENT_URL_TEMPLATE` is optional. Usually leave it unset; the SDK uses
+`SIGIL_EVAL_ENDPOINT` to build the printed "View in Sigil" link. If you override it,
+use the SDK-supported `{base}` and `{run_id}` placeholders, for example:
+
+```dotenv
+SIGIL_EXPERIMENT_URL_TEMPLATE={base}/a/grafana-sigil-app/evaluation/experiments/{run_id}
+```
+
+See `.env.sample` for the full template.
 
 ## Common Local Commands
 

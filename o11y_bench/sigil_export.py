@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sys
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -38,13 +37,14 @@ from reporting.report_data import (
 
 @dataclass(slots=True)
 class SigilExportOptions:
-    api: str = "http://localhost:8080"
-    tenant: str = "fake"
+    api: str = ""
+    tenant: str = ""
+    auth_mode: str = "basic"
+    auth_token: str = ""
     run_id: str = ""
     name: str = ""
     description: str = ""
     tags: list[str] = field(default_factory=lambda: ["o11y-bench"])
-    sdk_path: Path | None = None
 
 
 @dataclass(slots=True)
@@ -154,7 +154,7 @@ class SigilLiveExporter:
     def _connect(self) -> None:
         if self._run is not None:
             return
-        sdk = _import_sdk(self.options.sdk_path)
+        sdk = _import_sdk()
         self._sdk = sdk
         self._client = _make_client(sdk, self.options)
         self._categories = load_task_categories(self.tasks_dir)
@@ -303,13 +303,19 @@ def _score_output(
 
 def _make_client(sdk: Any, options: SigilExportOptions) -> Any:
     api = options.api.rstrip("/")
+    if not api:
+        raise ValueError("Sigil export requires SIGIL_ENDPOINT or --sigil-api/--api.")
+    auth = sdk.AuthConfig(mode=options.auth_mode or "basic", tenant_id=options.tenant)
+    if options.auth_token:
+        auth.bearer_token = options.auth_token
+        auth.basic_password = options.auth_token
     return sdk.Client(
         sdk.ClientConfig(
             api=sdk.ApiConfig(endpoint=api),
             generation_export=sdk.GenerationExportConfig(
                 protocol="http",
                 endpoint=f"{api}/api/v1/generations:export",
-                auth=sdk.AuthConfig(mode="tenant", tenant_id=options.tenant),
+                auth=auth,
             ),
         )
     )
@@ -511,16 +517,12 @@ def _parse_datetime(value: Any) -> datetime | None:
         return None
 
 
-def _import_sdk(sdk_path: Path | None = None) -> Any:
+def _import_sdk() -> Any:
     """Imports the Sigil SDK lazily, with a friendly opt-in error if it's absent.
 
-    ``sdk_path`` (or ``SIGIL_SDK_PYTHON_PATH``) is an optional escape hatch to
-    point at a local SDK checkout without installing it; normally the SDK is
-    installed into the venv via ``mise run sigil:setup``.
+    The SDK is installed into the venv via ``mise run sigil:setup``.
     """
 
-    if sdk_path is not None:
-        sys.path.insert(0, str(sdk_path.resolve()))
     try:
         import sigil_sdk
     except ImportError as exc:
@@ -528,7 +530,6 @@ def _import_sdk(sdk_path: Path | None = None) -> Any:
             "Sigil export is an opt-in feature and needs the Sigil Python SDK, which is "
             "not installed in this environment.\n"
             "Enable it with:\n"
-            "    mise run sigil:setup\n"
-            "or point at a local SDK checkout with --sigil-sdk-path / SIGIL_SDK_PYTHON_PATH."
+            "    mise run sigil:setup"
         ) from exc
     return sigil_sdk

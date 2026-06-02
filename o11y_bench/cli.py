@@ -94,20 +94,19 @@ def main() -> None:
         help="Export the completed job to Sigil as an external experiment",
     )
     job_parser.add_argument(
-        "--sigil-api", default=os.environ.get("SIGIL_API_ENDPOINT", "http://localhost:8080")
+        "--sigil-api",
+        default=os.environ.get("SIGIL_ENDPOINT", ""),
     )
-    job_parser.add_argument("--sigil-tenant", default=os.environ.get("SIGIL_TENANT_ID", "fake"))
+    job_parser.add_argument(
+        "--sigil-tenant",
+        default=os.environ.get("SIGIL_AUTH_TENANT_ID", ""),
+    )
+    job_parser.add_argument("--sigil-auth-mode", default=os.environ.get("SIGIL_AUTH_MODE", "basic"))
+    job_parser.add_argument("--sigil-auth-token", default=os.environ.get("SIGIL_AUTH_TOKEN"))
     job_parser.add_argument("--sigil-run-id")
     job_parser.add_argument("--sigil-name")
     job_parser.add_argument("--sigil-description", default="")
     job_parser.add_argument("--sigil-tag", action="append", default=[])
-    job_parser.add_argument(
-        "--sigil-sdk-path",
-        type=Path,
-        default=Path(os.environ["SIGIL_SDK_PYTHON_PATH"])
-        if os.environ.get("SIGIL_SDK_PYTHON_PATH")
-        else None,
-    )
 
     # --- finalize: stamp checksums + generate per-job report ---
     finalize_parser = subparsers.add_parser(
@@ -133,19 +132,20 @@ def main() -> None:
     )
     sigil_parser.add_argument("job_dir", type=Path)
     sigil_parser.add_argument("--path", type=Path)
-    sigil_parser.add_argument("--api", default=os.environ.get("SIGIL_API_ENDPOINT", "http://localhost:8080"))
-    sigil_parser.add_argument("--tenant", default=os.environ.get("SIGIL_TENANT_ID", "fake"))
+    sigil_parser.add_argument(
+        "--api",
+        default=os.environ.get("SIGIL_ENDPOINT", ""),
+    )
+    sigil_parser.add_argument(
+        "--tenant",
+        default=os.environ.get("SIGIL_AUTH_TENANT_ID", ""),
+    )
+    sigil_parser.add_argument("--auth-mode", default=os.environ.get("SIGIL_AUTH_MODE", "basic"))
+    sigil_parser.add_argument("--auth-token", default=os.environ.get("SIGIL_AUTH_TOKEN"))
     sigil_parser.add_argument("--run-id")
     sigil_parser.add_argument("--name")
     sigil_parser.add_argument("--description", default="")
     sigil_parser.add_argument("--tag", action="append", default=[])
-    sigil_parser.add_argument(
-        "--sdk-path",
-        type=Path,
-        default=Path(os.environ["SIGIL_SDK_PYTHON_PATH"])
-        if os.environ.get("SIGIL_SDK_PYTHON_PATH")
-        else None,
-    )
 
     args = _parse_args(parser)
 
@@ -249,10 +249,12 @@ def _cmd_job(args: argparse.Namespace) -> None:
 
     sigil_exporter = None
     if getattr(args, "sigil_experiment_export", False) and not args.dry_run:
+        sigil_options = _sigil_options_from_args(args)
+        _print_sigil_publish_start(sigil_options)
         sigil_exporter = SigilLiveExporter(
             spec.jobs_dir / spec.job_name,
             spec.tasks_dir,
-            _sigil_options_from_args(args),
+            sigil_options,
         )
 
     execute_kwargs = {"dry_run": args.dry_run, "quiet": args.quiet}
@@ -308,7 +310,9 @@ def _cmd_sigil_export(args: argparse.Namespace) -> None:
 def _export_job_result_to_sigil(
     args: argparse.Namespace, job_dir: Path, tasks_dir: Path
 ) -> SigilExportResult:
-    result = export_job_to_sigil(job_dir, tasks_dir, _sigil_options_from_args(args))
+    sigil_options = _sigil_options_from_args(args)
+    _print_sigil_publish_start(sigil_options)
+    result = export_job_to_sigil(job_dir, tasks_dir, sigil_options)
     print(_format_sigil_export_result(result))
     return result
 
@@ -324,6 +328,18 @@ def _print_sigil_export_result(result: SigilExportResult) -> None:
     print(_format_sigil_export_result(result))
 
 
+def _print_sigil_publish_start(options: SigilExportOptions) -> None:
+    stack_url = os.environ.get("SIGIL_EVAL_ENDPOINT", "").rstrip("/")
+    ingest_endpoint = options.api.rstrip("/") if options.api else "<unset>"
+    print("Publishing results to Grafana AI o11y")
+    if stack_url:
+        print(f"Sigil stack URL: {stack_url}")
+    else:
+        print("Sigil stack URL: <unset; set SIGIL_EVAL_ENDPOINT>")
+    print(f"Sigil ingest endpoint: {ingest_endpoint}")
+    print(f"Sigil auth mode: {options.auth_mode or 'basic'}")
+
+
 def _sigil_options_from_args(args: argparse.Namespace) -> SigilExportOptions:
     # The `job` and `sigil-export` subparsers name the same options differently
     # (`--sigil-api` vs `--api`), so accept either spelling.
@@ -334,15 +350,15 @@ def _sigil_options_from_args(args: argparse.Namespace) -> SigilExportOptions:
                 return str(value)
         return default
 
-    sdk_path = getattr(args, "sdk_path", None) or getattr(args, "sigil_sdk_path", None)
     return SigilExportOptions(
-        api=_opt("api", "sigil_api", default="http://localhost:8080"),
-        tenant=_opt("tenant", "sigil_tenant", default="fake"),
+        api=_opt("api", "sigil_api"),
+        tenant=_opt("tenant", "sigil_tenant"),
+        auth_mode=_opt("auth_mode", "sigil_auth_mode", default="basic"),
+        auth_token=_opt("auth_token", "sigil_auth_token"),
         run_id=_opt("run_id", "sigil_run_id"),
         name=_opt("name", "sigil_name"),
         description=_opt("description", "sigil_description"),
         tags=list(getattr(args, "tag", None) or getattr(args, "sigil_tag", None) or []),
-        sdk_path=Path(sdk_path) if sdk_path is not None else None,
     )
 
 

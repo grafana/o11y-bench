@@ -1115,7 +1115,7 @@ requires-dist = [
     { name = "promql-parser", specifier = ">=0.7.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "sigil-sdk", marker = "extra == 'sigil'", editable = "../sigil-sdk/python" },
+    { name = "sigil-sdk", marker = "extra == 'sigil'", specifier = "==0.8.0" },
 ]
 provides-extras = ["sigil"]
 
@@ -1836,8 +1836,8 @@ wheels = [
 
 [[package]]
 name = "sigil-sdk"
-version = "0.7.0"
-source = { editable = "../sigil-sdk/python" }
+version = "0.8.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "grpcio" },
     { name = "opentelemetry-api" },
@@ -1847,20 +1847,10 @@ dependencies = [
     { name = "opentelemetry-sdk" },
     { name = "protobuf" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "grpcio", specifier = ">=1.80.0" },
-    { name = "grpcio-tools", marker = "extra == 'dev'", specifier = ">=1.80.0" },
-    { name = "opentelemetry-api", specifier = ">=1.27.0" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.27.0" },
-    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.27.0" },
-    { name = "opentelemetry-proto", specifier = ">=1.27.0" },
-    { name = "opentelemetry-sdk", specifier = ">=1.27.0" },
-    { name = "protobuf", specifier = ">=6.31.1" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.2.0" },
+sdist = { url = "https://files.pythonhosted.org/packages/ca/97/d4108386cdf1cb95cae51cc11fa0278d28352fb2b9211eddc8ceaec34292/sigil_sdk-0.8.0.tar.gz", hash = "sha256:f1457c2f1837267f370c1a1927e1668395331d8d3f8cab47e38f648021cb422e", size = 135249, upload-time = "2026-06-01T21:08:31.843Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/08/7b/5fbdb75864f2cf4cba98b5e9d7d8d279426bc690716dd920fdbb2f6b01cf/sigil_sdk-0.8.0-py3-none-any.whl", hash = "sha256:9be9ba3b3a764587656a3ab5d20b99a2229ac3e1c7bd74cdfa79d9c65468ec0e", size = 88603, upload-time = "2026-06-01T21:08:30.622Z" },
 ]
-provides-extras = ["dev"]
 
 [[package]]
 name = "six"

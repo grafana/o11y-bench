@@ -138,7 +138,7 @@ def test_export_job_to_sigil_maps_trials_to_generations_and_scores(monkeypatch, 
     FakeClient.instances = []
     # Use the real SDK types (ExperimentRun/ScoreOutput/GenerationStart/...) but
     # swap the network-backed Client for a recorder fake.
-    monkeypatch.setattr(sigil_export, "_import_sdk", lambda sdk_path=None: sigil_sdk)
+    monkeypatch.setattr(sigil_export, "_import_sdk", lambda: sigil_sdk)
     monkeypatch.setattr(sigil_export, "_make_client", lambda sdk, options: FakeClient())
 
     job_dir, tasks_dir = _write_trial(tmp_path)

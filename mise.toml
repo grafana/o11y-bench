@@ -1,5 +1,8 @@
 min_version = "2024.1.0"
 
+[env]
+_.file = ".env"
+
 [tools]
 python = "3.14"
 uv = "0.11.8"
@@ -15,7 +18,7 @@ description = "Clean stale Harbor Docker projects and pre-build shared images"
 run = "bash scripts/harbor_preflight.sh"
 
 [tasks."sigil:setup"]
-description = "Opt-in: install the local Sigil SDK so runs can be exported to Sigil"
+description = "Opt-in: install the Sigil SDK so runs can be exported to Sigil"
 run = "uv sync --extra sigil"
 
 # -- Bench --

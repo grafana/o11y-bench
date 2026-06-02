@@ -472,8 +472,9 @@ def test_cmd_job_rejects_agent_and_agent_import_path_together() -> None:
         cli._cmd_job(args)
 
 
-def test_cmd_job_passes_live_sigil_exporter_when_flag_enabled(monkeypatch) -> None:
+def test_cmd_job_passes_live_sigil_exporter_when_flag_enabled(monkeypatch, capsys) -> None:
     monkeypatch.setattr(cli, "run_preflight", lambda *, quiet=False: None)
+    monkeypatch.setenv("SIGIL_EVAL_ENDPOINT", "https://grafana-stack.grafana.net")
 
     execute_calls: list[tuple[config.JobSpec, object]] = []
     exporter_calls: list[tuple[object, object, object]] = []
@@ -516,13 +517,14 @@ def test_cmd_job_passes_live_sigil_exporter_when_flag_enabled(monkeypatch) -> No
         dry_run=False,
         quiet=True,
         sigil_experiment_export=True,
-        sigil_api="http://localhost:8080",
-        sigil_tenant="fake",
+        sigil_api="https://sigil-prod-us-central1.grafana.net",
+        sigil_tenant="grafana-cloud-tenant",
+        sigil_auth_mode="basic",
+        sigil_auth_token="grafana-cloud-access-policy-token",
         sigil_run_id="o11y-run-1",
         sigil_name="o11y run",
         sigil_description="",
         sigil_tag=["o11y-bench", "opencode"],
-        sigil_sdk_path=None,
     )
 
     cli._cmd_job(args)
@@ -533,8 +535,18 @@ def test_cmd_job_passes_live_sigil_exporter_when_flag_enabled(monkeypatch) -> No
     job_dir, tasks_dir, options = exporter_calls[0]
     assert job_dir == config.ROOT / "jobs" / "openai-gpt-5-4-nano-off-opencode-k1"
     assert tasks_dir == config.TASKS_DIR
+    assert options.api == "https://sigil-prod-us-central1.grafana.net"
+    assert options.tenant == "grafana-cloud-tenant"
+    assert options.auth_mode == "basic"
+    assert options.auth_token == "grafana-cloud-access-policy-token"
     assert options.run_id == "o11y-run-1"
     assert options.tags == ["o11y-bench", "opencode"]
+
+    captured = capsys.readouterr()
+    assert "Publishing results to Grafana AI o11y" in captured.out
+    assert "Sigil stack URL: https://grafana-stack.grafana.net" in captured.out
+    assert "Sigil ingest endpoint: https://sigil-prod-us-central1.grafana.net" in captured.out
+    assert "grafana-cloud-access-policy-token" not in captured.out
 
 
 def test_regrade_job_dir_updates_verifier_outputs(monkeypatch, tmp_path) -> None:
