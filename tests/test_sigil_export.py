@@ -4,9 +4,112 @@ import json
 from types import SimpleNamespace
 from typing import ClassVar
 
-import sigil_sdk
-
 from o11y_bench import sigil_export
+
+
+class FakeSdkObject(SimpleNamespace):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+
+class FakeMessageRole:
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
+
+
+class FakeExperimentRun:
+    def __init__(self, *, client, run_id, name, dataset, candidate, upload, agent_name):
+        self._client = client
+        self.run_id = run_id
+        self.name = name
+        self.dataset = dataset
+        self.candidate = candidate
+        self.upload = upload
+        self.agent_name = agent_name
+        self.accepted_scores = 0
+        self.produced_generation_ids = []
+
+    def reset_capture(self, *, conversation_id):
+        self.conversation_id = conversation_id
+
+    def start_generation(self, start):
+        start.tags = {**start.tags, "experiment.run_id": self.run_id}
+        start.metadata = {**start.metadata, "experiment_run_id": self.run_id}
+        return FakeExperimentRecorder(self, self._client.start_generation(start))
+
+    def add_scores(self, scores, *, item, generation_ids, trial_id):
+        generation_id = generation_ids[0] if generation_ids else ""
+        for score in scores:
+            score.run_id = self.run_id
+            score.generation_id = generation_id
+            score.source = SimpleNamespace(kind="experiment", id=self.run_id)
+            score.metadata = {
+                "dataset_id": self.dataset["id"],
+                "item_id": item.id,
+                "trial_id": trial_id,
+                **score.metadata,
+                "candidate": self.candidate,
+            }
+        result = self._client.export_scores(scores)
+        self.accepted_scores += result.accepted_count
+        self._client.flush()
+
+
+class FakeExperimentRecorder:
+    def __init__(self, run, recorder):
+        self.run = run
+        self.recorder = recorder
+
+    def __enter__(self):
+        return self.recorder.__enter__()
+
+    def __exit__(self, exc_type, exc, tb):
+        result = self.recorder.__exit__(exc_type, exc, tb)
+        self.run.produced_generation_ids = [self.recorder.last_generation.id]
+        return result
+
+
+class FakeSdk:
+    ConflictError = type("ConflictError", (Exception,), {})
+    MessageRole = FakeMessageRole
+    ExperimentRun = FakeExperimentRun
+    CreateExperimentRequest = FakeSdkObject
+    UpdateExperimentRequest = FakeSdkObject
+    ScoreOutput = FakeSdkObject
+    ScoreValue = FakeSdkObject
+    DatasetItem = FakeSdkObject
+    GenerationStart = FakeSdkObject
+    Generation = FakeSdkObject
+    ModelRef = FakeSdkObject
+    TokenUsage = FakeSdkObject
+    Message = FakeSdkObject
+    ToolCall = FakeSdkObject
+    ToolResult = FakeSdkObject
+
+    @staticmethod
+    def text_part(text):
+        return SimpleNamespace(type="text", text=text)
+
+    @staticmethod
+    def thinking_part(text):
+        return SimpleNamespace(type="thinking", text=text)
+
+    @staticmethod
+    def tool_call_part(tool_call):
+        return SimpleNamespace(type="tool_call", tool_call=tool_call)
+
+    @staticmethod
+    def tool_result_part(tool_result):
+        return SimpleNamespace(type="tool_result", tool_result=tool_result)
+
+    @staticmethod
+    def user_text_message(text):
+        return FakeSdkObject(role=FakeMessageRole.USER, parts=[FakeSdk.text_part(text)])
+
+    @staticmethod
+    def assistant_text_message(text):
+        return FakeSdkObject(role=FakeMessageRole.ASSISTANT, parts=[FakeSdk.text_part(text)])
 
 
 class FakeRecorder:
@@ -136,9 +239,8 @@ def _write_trial(tmp_path):
 
 def test_export_job_to_sigil_maps_trials_to_generations_and_scores(monkeypatch, tmp_path):
     FakeClient.instances = []
-    # Use the real SDK types (ExperimentRun/ScoreOutput/GenerationStart/...) but
-    # swap the network-backed Client for a recorder fake.
-    monkeypatch.setattr(sigil_export, "_import_sdk", lambda: sigil_sdk)
+    fake_sdk = FakeSdk()
+    monkeypatch.setattr(sigil_export, "_import_sdk", lambda: fake_sdk)
     monkeypatch.setattr(sigil_export, "_make_client", lambda sdk, options: FakeClient())
 
     job_dir, tasks_dir = _write_trial(tmp_path)
