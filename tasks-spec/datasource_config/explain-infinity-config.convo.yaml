@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: explain-infinity-config
+description: Explain Infinity data source configuration
+conversations:
+    - name: explain-infinity-config
+      description: Explain Infinity data source configuration
+      category: learn
+      area: infinity
+      input:
+        - role: user
+          content: What can the Infinity data source connect to, and what do I configure?
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: explain Infinity data source configuration.'
+                    - criterion: Describes Infinity as a source for JSON, CSV, XML, GraphQL, and HTML data fetched over HTTP/REST.
+                    - criterion: Explains the allowed hosts list restricts which URLs the data source can query.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources/uid/infinity"
+                    - criterion: Covers authentication options (none, basic, bearer token, API key, OAuth2, or AWS SigV4).
+                    - criterion: Mentions choosing the parser/format and the URL or inline source type per query.

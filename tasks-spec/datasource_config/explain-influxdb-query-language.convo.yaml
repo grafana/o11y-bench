@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: explain-influxdb-query-language
+description: Explain the InfluxDB query language choice
+conversations:
+    - name: explain-influxdb-query-language
+      description: Explain the InfluxDB query language choice
+      category: learn
+      area: influxdb
+      input:
+        - role: user
+          content: InfluxDB asks me to pick a query language - InfluxQL, Flux, or SQL. How do I choose?
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: explain the InfluxDB query language choice.'
+                    - criterion: Maps each query language to a version - InfluxQL for 1.x, Flux for 2.x, SQL for 3.x.
+                    - criterion: Notes the auth/config differences (1.x uses database plus user/password; 2.x uses org, bucket, and token; 3.x uses database and token).
+                    - criterion: Recommends matching the query language to the running InfluxDB version.
+                    - criterion: References that the example source is configured for SQL on InfluxDB 3.x.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources/uid/influxdb"

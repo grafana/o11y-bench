@@ -1,0 +1,31 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: edit-loki-derived-fields
+description: Add a trace-correlation derived field to an existing Loki data source
+conversations:
+    - name: edit-loki-derived-fields
+      description: Add a trace-correlation derived field to an existing Loki data source
+      category: behavior
+      area: loki
+      input:
+        - role: user
+          content: Add a derived field on our Loki data source that pulls trace_id out of log lines and links to Tempo.
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: add a derived field for trace correlation to the Loki data source.'
+                    - criterion: Adds a derived field with a regex matcher that extracts trace_id from the log line.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources/uid/loki"
+                    - criterion: Sets the derived field to link to the Tempo data source via an internal link (datasourceUid).
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources"
+                    - criterion: Names the field (for example TraceID) so it surfaces as a link in the log detail view.
+                    - criterion: Preserves the existing maxLines and connection settings.

@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: edit-clickhouse-protocol
+description: Switch an existing ClickHouse data source from native to HTTP protocol
+conversations:
+    - name: edit-clickhouse-protocol
+      description: Switch an existing ClickHouse data source from native to HTTP protocol
+      category: behavior
+      area: clickhouse
+      input:
+        - role: user
+          content: Switch our ClickHouse data source from the native protocol to HTTP.
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: switch the ClickHouse data source to the HTTP protocol.'
+                    - criterion: Identifies the protocol is currently native and changes it to http.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources/uid/clickhouse"
+                    - criterion: Updates the port from the native default (9000) to the HTTP default (8123), or 8443 when secure/TLS is enabled.
+                    - criterion: Keeps host, username, and secure/TLS settings consistent with the protocol change.
+                    - criterion: Notes the default database and other connection settings remain unchanged.

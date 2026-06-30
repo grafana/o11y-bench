@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: edit-tempo-traces-to-logs
+description: Configure trace-to-logs on an existing Tempo data source
+conversations:
+    - name: edit-tempo-traces-to-logs
+      description: Configure trace-to-logs on an existing Tempo data source
+      category: behavior
+      area: tempo
+      input:
+        - role: user
+          content: Configure our Tempo data source so clicking a span jumps to the related logs in Loki.
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: configure trace-to-logs on the Tempo data source.'
+                    - criterion: Enables trace-to-logs (tracesToLogsV2) pointing at the Loki data source.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources/uid/tempo"
+                    - criterion: Sets a span start/end time shift window so the log lookup brackets the span's time range.
+                    - criterion: Notes filtering by trace ID (and optionally span ID) to scope the correlated logs.
+                    - criterion: Preserves the existing service map and trace-to-metrics settings.

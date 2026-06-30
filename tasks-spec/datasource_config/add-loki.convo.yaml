@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: add-loki
+description: Connect a new Loki data source
+conversations:
+    - name: add-loki
+      description: Connect a new Loki data source
+      category: behavior
+      area: loki
+      input:
+        - role: user
+          content: Add a Loki data source at http://loki.monitoring.svc:3100 for our logs.
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: configure a new Loki data source.'
+                    - criterion: Selects the Loki data source type and sets the URL to http://loki.monitoring.svc:3100 with proxy (server) access.
+                    - criterion: Mentions the maximum lines (maxLines) setting that caps how many log lines a query returns.
+                    - criterion: Describes derived fields to extract a trace ID from log lines and link to a Tempo data source for trace correlation.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources"
+                    - criterion: Covers authentication options for securing the connection.

@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: add-bigquery
+description: Connect a new BigQuery data source
+conversations:
+    - name: add-bigquery
+      description: Connect a new BigQuery data source
+      category: behavior
+      area: bigquery
+      input:
+        - role: user
+          content: 'Set up a BigQuery data source for project "explore-prod" using a service account.'
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: configure a new BigQuery data source.'
+                    - criterion: Selects the BigQuery data source type (grafana-bigquery-datasource) and sets the default project to explore-prod.
+                    - criterion: Uses Google JWT / service-account authentication and stores the private key as a secret (secureJsonData).
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources"
+                    - criterion: Captures the service-account client email.
+                    - criterion: Notes the processing/default region as a relevant setting and that the service account needs BigQuery read and job permissions.

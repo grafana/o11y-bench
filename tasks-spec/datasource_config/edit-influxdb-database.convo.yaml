@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: edit-influxdb-database
+description: Repoint an existing InfluxDB data source to a different database
+conversations:
+    - name: edit-influxdb-database
+      description: Repoint an existing InfluxDB data source to a different database
+      category: behavior
+      area: influxdb
+      input:
+        - role: user
+          content: Point our InfluxDB data source at a different database, switching it from the current one to 'prod_metrics'.
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: update the InfluxDB target database.'
+                    - criterion: Identifies the current database/bucket (testdb) and changes it to prod_metrics.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources/uid/influxdb"
+                    - criterion: Keeps the SQL query language (InfluxDB 3.x) setting unchanged.
+                    - criterion: Preserves the URL and the API token secret.
+                    - criterion: Confirms no other connection settings need to change.

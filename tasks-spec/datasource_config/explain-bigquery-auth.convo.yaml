@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: explain-bigquery-auth
+description: Explain BigQuery authentication options
+conversations:
+    - name: explain-bigquery-auth
+      description: Explain BigQuery authentication options
+      category: learn
+      area: bigquery
+      input:
+        - role: user
+          content: How does authentication work for the BigQuery data source?
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: explain BigQuery authentication.'
+                    - criterion: Describes Google JWT / service-account key authentication, where you upload or paste the service-account key JSON.
+                    - criterion: Mentions the GCE default service account as an alternative when Grafana runs on Google Cloud.
+                    - criterion: Notes the service account needs BigQuery roles such as Data Viewer and Job User.
+                    - criterion: States the private key is stored as a secret and the client email and default project are required.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources/uid/bigquery"

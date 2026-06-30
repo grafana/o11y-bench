@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: add-prometheus
+description: Connect a new Prometheus data source
+conversations:
+    - name: add-prometheus
+      description: Connect a new Prometheus data source
+      category: behavior
+      area: prometheus
+      input:
+        - role: user
+          content: Set up a new Prometheus data source pointing at http://prometheus.monitoring.svc:9090. We're running vanilla Prometheus.
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: configure a new Prometheus data source.'
+                    - criterion: Selects the Prometheus data source type and sets the server URL to http://prometheus.monitoring.svc:9090 with proxy (server) access.
+                    - criterion: Sets the Prometheus type/flavor to Prometheus rather than Mimir, Thanos, or Cortex.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources"
+                    - criterion: Mentions the scrape interval (timeInterval) setting so the query step aligns with the server's scrape cadence.
+                    - criterion: Notes authentication options (no auth, basic auth, or forwarding the user's OAuth identity) for securing the connection.

@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: add-tempo
+description: Connect a new Tempo data source
+conversations:
+    - name: add-tempo
+      description: Connect a new Tempo data source
+      category: behavior
+      area: tempo
+      input:
+        - role: user
+          content: I want to connect a Tempo backend at http://tempo.monitoring.svc:3200 for traces.
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: configure a new Tempo data source.'
+                    - criterion: Selects the Tempo data source type and sets the URL to http://tempo.monitoring.svc:3200 with proxy (server) access.
+                    - criterion: Describes trace-to-logs correlation by pointing Tempo at a Loki data source.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources"
+                    - criterion: Mentions trace-to-metrics and/or service map configuration backed by a Prometheus data source.
+                    - criterion: Notes the node graph option for visualizing span relationships.

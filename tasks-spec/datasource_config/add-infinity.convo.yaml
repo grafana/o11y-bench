@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: add-infinity
+description: Connect a JSON/REST API source via Infinity
+conversations:
+    - name: add-infinity
+      description: Connect a JSON/REST API source via Infinity
+      category: behavior
+      area: infinity
+      input:
+        - role: user
+          content: I need to pull JSON from an internal REST API at https://api.internal.example.com into Grafana. Which data source and how do I set it up?
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: configure a data source for a JSON/REST API.'
+                    - criterion: Recommends the Infinity data source type (yesoreyeram-infinity-datasource) for fetching JSON/CSV/REST data.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources"
+                    - criterion: Explains adding the API host to the allowed hosts list (for example https://api.internal.example.com).
+                    - criterion: Describes selecting the JSON parser and the URL source type for the query.
+                    - criterion: Mentions authentication options (bearer token, basic auth, or API key) for the upstream API.

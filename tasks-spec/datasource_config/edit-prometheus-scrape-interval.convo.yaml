@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: edit-prometheus-scrape-interval
+description: Update the scrape interval on an existing Prometheus data source
+conversations:
+    - name: edit-prometheus-scrape-interval
+      description: Update the scrape interval on an existing Prometheus data source
+      category: behavior
+      area: prometheus
+      input:
+        - role: user
+          content: Our Prometheus data source still assumes a 30s scrape interval, but we moved to 15s scrapes. Update it.
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: update the Prometheus scrape interval setting.'
+                    - criterion: Identifies the scrape interval (timeInterval) setting, currently 30s, as the field to change.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources/uid/prometheus"
+                    - criterion: Sets the scrape interval to 15s to match the new scrape cadence.
+                    - criterion: Explains this controls the minimum query step / $__interval lower bound.
+                    - criterion: Leaves other connection settings (URL, access mode) unchanged.

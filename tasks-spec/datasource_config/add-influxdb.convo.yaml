@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: add-influxdb
+description: Connect a new InfluxDB data source
+conversations:
+    - name: add-influxdb
+      description: Connect a new InfluxDB data source
+      category: behavior
+      area: influxdb
+      input:
+        - role: user
+          content: We run InfluxDB 3.x. Add a data source at http://influxdb.metrics.svc:8181 querying database 'telemetry' with an API token.
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: configure a new InfluxDB data source.'
+                    - criterion: Selects the InfluxDB data source type and sets the URL to http://influxdb.metrics.svc:8181.
+                    - criterion: Selects the SQL query language appropriate for InfluxDB 3.x rather than Flux or InfluxQL.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources"
+                    - criterion: Captures the target database/bucket telemetry.
+                    - criterion: Stores the API token as a secret (secureJsonData).

@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: explain-postgres-tls-options
+description: Explain PostgreSQL TLS/SSL mode options
+conversations:
+    - name: explain-postgres-tls-options
+      description: Explain PostgreSQL TLS/SSL mode options
+      category: learn
+      area: postgres
+      input:
+        - role: user
+          content: What are the SSL/TLS options for a PostgreSQL data source and which should I use?
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: explain PostgreSQL TLS/SSL mode options.'
+                    - criterion: Lists the sslmode options (disable, require, verify-ca, verify-full) and what each one does.
+                    - criterion: Recommends verify-full for production because it validates the server certificate and hostname.
+                    - criterion: Notes that verify-ca and verify-full require supplying the CA certificate.
+                    - criterion: References that the example source currently uses sslmode 'disable', which provides no encryption.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources/uid/postgres"

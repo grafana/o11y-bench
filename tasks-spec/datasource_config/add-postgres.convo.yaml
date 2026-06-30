@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: add-postgres
+description: Connect a new PostgreSQL data source
+conversations:
+    - name: add-postgres
+      description: Connect a new PostgreSQL data source
+      category: behavior
+      area: postgres
+      input:
+        - role: user
+          content: 'I want to connect a PostgreSQL database at db.example.com:5432, database "analytics", user "grafana_ro". Walk me through setting up the data source.'
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: configure a new PostgreSQL data source.'
+                    - criterion: Selects the PostgreSQL data source type and captures host db.example.com:5432, database analytics, and user grafana_ro.
+                    - criterion: Stores the password as a secret (secureJsonData / "Password" field), not in plaintext config.
+                    - criterion: Addresses TLS/SSL mode selection (disable, require, verify-ca, or verify-full).
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources"
+                    - criterion: Mentions connection-pool or PostgreSQL-version settings as optional tuning.

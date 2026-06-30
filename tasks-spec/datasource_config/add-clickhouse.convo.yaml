@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: add-clickhouse
+description: Connect a new ClickHouse data source
+conversations:
+    - name: add-clickhouse
+      description: Connect a new ClickHouse data source
+      category: behavior
+      area: clickhouse
+      input:
+        - role: user
+          content: Add a ClickHouse data source. Host is clickhouse.analytics.internal, and we use the native protocol on port 9000 with TLS.
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: configure a new ClickHouse data source.'
+                    - criterion: Selects the ClickHouse data source type (grafana-clickhouse-datasource) and sets the host to clickhouse.analytics.internal.
+                    - criterion: Configures the native protocol on port 9000 and enables the secure/TLS option as requested.
+                    - criterion: Captures a username and stores the password as a secret (secureJsonData).
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources"
+                    - criterion: Mentions the default database setting.

@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: explain-prometheus-type-and-auth
+description: Explain the key Prometheus connection settings
+conversations:
+    - name: explain-prometheus-type-and-auth
+      description: Explain the key Prometheus connection settings
+      category: learn
+      area: prometheus
+      input:
+        - role: user
+          content: What do I need to decide when connecting Prometheus to Grafana? There's a 'type' dropdown and auth options I don't understand.
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: explain the key Prometheus connection settings.'
+                    - criterion: Explains the Prometheus type/flavor choice (Prometheus, Mimir, Thanos, Cortex) and that it tunes query behavior.
+                    - criterion: Describes the authentication options (no auth, basic auth, bearer token, or forwarding the user's OAuth identity).
+                    - criterion: Mentions the scrape interval (timeInterval) and HTTP method (GET or POST) settings.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources/uid/prometheus"
+                    - criterion: Distinguishes proxy (server) versus browser (direct) access modes.

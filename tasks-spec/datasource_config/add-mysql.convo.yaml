@@ -1,0 +1,28 @@
+---
+type: com.grafana.ai.conversation
+version: "2.0"
+name: add-mysql
+description: Connect a new MySQL data source
+conversations:
+    - name: add-mysql
+      description: Connect a new MySQL data source
+      category: behavior
+      area: mysql
+      input:
+        - role: user
+          content: 'Connect a MySQL database at mysql.prod.internal:3306, database "appdb", user "grafana". How do I add it?'
+      output:
+        - type: text
+          required: true
+          text_assertions:
+            - assertion:
+                type: semantic
+                criteria:
+                    - criterion: 'Completes the requested outcome: configure a new MySQL data source.'
+                    - criterion: Selects the MySQL data source type and captures host mysql.prod.internal:3306, database appdb, and user grafana.
+                    - criterion: Stores the password as a secret (secureJsonData), not in plaintext config.
+                    - criterion: Addresses TLS/SSL configuration for the connection.
+                    - criterion: Mentions connection-pool settings (max open and idle connections) as optional tuning.
+                      facts:
+                        - source: grafana
+                          path: "/api/datasources"
