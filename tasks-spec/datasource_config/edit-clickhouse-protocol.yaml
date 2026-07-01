@@ -1,0 +1,51 @@
+id: edit-clickhouse-protocol
+category: datasource_config
+tags:
+- datasource
+- clickhouse
+- edit
+- protocol
+setup_datasources:
+- uid: clickhouse
+  name: ClickHouse
+  type: grafana-clickhouse-datasource
+  access: proxy
+  jsonData:
+    host: clickhouse.analytics.internal
+    port: 9000
+    protocol: native
+    secure: true
+    username: default
+    defaultDatabase: default
+statement: |
+  Switch our ClickHouse data source from the native protocol to HTTP.
+checks:
+- weight: 40
+  type: state
+  params:
+    mode: datasource_detail
+    name: ClickHouse
+    type: grafana-clickhouse-datasource
+    json_data:
+    - path: protocol
+      equals: http
+    - path: port
+      any_of:
+      - "8123"
+      - "8443"
+  name: ClickHouse datasource now uses the HTTP protocol on the matching port
+rubric:
+- criterion: The final response switches the ClickHouse data source to the HTTP protocol (the requested outcome)
+  weight: 20
+  fact:
+    kind: resource
+    resource: datasource_detail
+    name: ClickHouse
+- criterion: Identifies that the protocol was native and changes it to http
+  weight: 15
+- criterion: Updates the port from the native default (9000) to the HTTP default (8123), or 8443 when secure/TLS is enabled
+  weight: 15
+- criterion: Keeps host, username, and secure/TLS settings consistent with the protocol change
+  weight: 10
+- criterion: Notes the default database and other connection settings remain unchanged
+  weight: 10

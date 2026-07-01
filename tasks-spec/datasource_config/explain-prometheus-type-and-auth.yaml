@@ -1,0 +1,25 @@
+id: explain-prometheus-type-and-auth
+category: datasource_config
+tags:
+- datasource
+- prometheus
+- learn
+- authentication
+statement: |
+  What do I need to decide when connecting Prometheus to Grafana? There's a 'type' dropdown and
+  auth options I don't understand.
+rubric:
+- criterion: The response explains the key Prometheus connection settings (the requested outcome)
+  weight: 25
+  fact:
+    kind: resource
+    resource: datasource_detail
+    name: Prometheus
+- criterion: Explains the Prometheus type/flavor choice (Prometheus, Mimir, Thanos, Cortex) and that it tunes query behavior
+  weight: 20
+- criterion: Describes the authentication options (no auth, basic auth, bearer token, or forwarding the user's OAuth identity)
+  weight: 20
+- criterion: Mentions the scrape interval (timeInterval) and HTTP method (GET or POST) settings
+  weight: 15
+- criterion: Distinguishes proxy (server) versus browser (direct) access modes
+  weight: 20

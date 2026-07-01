@@ -1,0 +1,34 @@
+id: add-mysql
+category: datasource_config
+tags:
+- datasource
+- mysql
+- add
+statement: |
+  Connect a MySQL database at mysql.prod.internal:3306, database "appdb", user "grafana". How do I
+  add it?
+checks:
+- weight: 40
+  type: state
+  params:
+    mode: datasource_detail
+    type: mysql
+    require_url: true
+    database: appdb
+    user: grafana
+  name: A MySQL datasource exists for appdb with the grafana user
+rubric:
+- criterion: The final response configures a new MySQL data source (the requested outcome)
+  weight: 20
+  fact:
+    kind: resource
+    resource: datasource_detail
+    type: mysql
+- criterion: Selects the MySQL data source type and captures host mysql.prod.internal:3306, database appdb, and user grafana
+  weight: 15
+- criterion: Stores the password as a secret (secureJsonData), not in plaintext config
+  weight: 15
+- criterion: Addresses TLS/SSL configuration for the connection
+  weight: 10
+- criterion: Mentions connection-pool settings (max open and idle connections) as optional tuning
+  weight: 10

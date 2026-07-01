@@ -1,0 +1,34 @@
+id: add-postgres
+category: datasource_config
+tags:
+- datasource
+- postgres
+- add
+statement: |
+  I want to connect a PostgreSQL database at db.example.com:5432, database "analytics", user
+  "grafana_ro". Walk me through setting up the data source.
+checks:
+- weight: 40
+  type: state
+  params:
+    mode: datasource_detail
+    type: grafana-postgresql-datasource
+    require_url: true
+    database: analytics
+    user: grafana_ro
+  name: A PostgreSQL datasource exists for the analytics database with the grafana_ro user
+rubric:
+- criterion: The final response configures a new PostgreSQL data source (the requested outcome)
+  weight: 20
+  fact:
+    kind: resource
+    resource: datasource_detail
+    type: grafana-postgresql-datasource
+- criterion: Selects the PostgreSQL data source type and captures host db.example.com:5432, database analytics, and user grafana_ro
+  weight: 15
+- criterion: Stores the password as a secret (secureJsonData / "Password" field), not in plaintext config
+  weight: 15
+- criterion: Addresses TLS/SSL mode selection (disable, require, verify-ca, or verify-full)
+  weight: 10
+- criterion: Mentions connection-pool or PostgreSQL-version settings as optional tuning
+  weight: 10

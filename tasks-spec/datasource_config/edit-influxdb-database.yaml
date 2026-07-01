@@ -1,0 +1,49 @@
+id: edit-influxdb-database
+category: datasource_config
+tags:
+- datasource
+- influxdb
+- edit
+- database
+setup_datasources:
+- uid: influxdb
+  name: InfluxDB
+  type: influxdb
+  access: proxy
+  url: http://influxdb.metrics.svc:8181
+  jsonData:
+    version: SQL
+    dbName: testdb
+  secureJsonData:
+    token: seed-token
+statement: |
+  Point our InfluxDB data source at a different database, switching it from the current one to
+  'prod_metrics'.
+checks:
+- weight: 40
+  type: state
+  params:
+    mode: datasource_detail
+    name: InfluxDB
+    type: influxdb
+    json_data:
+    - path: dbName
+      equals: prod_metrics
+    - path: version
+      equals: SQL
+  name: InfluxDB datasource now targets the prod_metrics database with SQL unchanged
+rubric:
+- criterion: The final response updates the InfluxDB target database (the requested outcome)
+  weight: 20
+  fact:
+    kind: resource
+    resource: datasource_detail
+    name: InfluxDB
+- criterion: Identifies the current database/bucket (testdb) and changes it to prod_metrics
+  weight: 20
+- criterion: Keeps the SQL query language (InfluxDB 3.x) setting unchanged
+  weight: 10
+- criterion: Preserves the URL and the API token secret
+  weight: 10
+- criterion: Confirms no other connection settings need to change
+  weight: 10

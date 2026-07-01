@@ -1,0 +1,33 @@
+id: explain-bigquery-auth
+category: datasource_config
+tags:
+- datasource
+- bigquery
+- learn
+- authentication
+setup_datasources:
+- uid: bigquery
+  name: BigQuery
+  type: grafana-bigquery-datasource
+  access: proxy
+  jsonData:
+    authenticationType: jwt
+    defaultProject: demo-project
+    clientEmail: grafana@demo-project.iam.gserviceaccount.com
+statement: |
+  How does authentication work for the BigQuery data source?
+rubric:
+- criterion: The response explains how to authenticate the BigQuery data source (the requested outcome)
+  weight: 30
+  fact:
+    kind: resource
+    resource: datasource_detail
+    name: BigQuery
+- criterion: Describes Google JWT / service-account key authentication, where you upload or paste the service-account key JSON
+  weight: 20
+- criterion: Mentions the GCE default service account as an alternative when Grafana runs on Google Cloud
+  weight: 15
+- criterion: Notes the service account needs BigQuery roles such as Data Viewer and Job User
+  weight: 15
+- criterion: States the private key is stored as a secret and that the client email and default project are required fields
+  weight: 20

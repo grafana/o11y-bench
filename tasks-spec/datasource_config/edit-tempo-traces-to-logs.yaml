@@ -1,0 +1,37 @@
+id: edit-tempo-traces-to-logs
+category: datasource_config
+tags:
+- datasource
+- tempo
+- edit
+- traces-to-logs
+statement: |
+  Configure our Tempo data source so clicking a span jumps to the related logs in Loki.
+checks:
+- weight: 40
+  type: state
+  params:
+    mode: datasource_detail
+    name: Tempo
+    type: tempo
+    json_data:
+    - path: tracesToLogsV2
+      present: true
+    - path: tracesToLogsV2.datasourceUid
+      equals: loki
+  name: Tempo datasource has trace-to-logs wired to the Loki datasource
+rubric:
+- criterion: The final response configures trace-to-logs on the Tempo data source (the requested outcome)
+  weight: 20
+  fact:
+    kind: resource
+    resource: datasource_detail
+    name: Tempo
+- criterion: Enables trace-to-logs (tracesToLogsV2) pointing at the Loki data source
+  weight: 20
+- criterion: Sets a span start/end time shift window so the log lookup brackets the span's time range
+  weight: 15
+- criterion: Notes filtering by trace ID (and optionally span ID) to scope the correlated logs
+  weight: 10
+- criterion: Preserves the existing service map and trace-to-metrics settings
+  weight: 10

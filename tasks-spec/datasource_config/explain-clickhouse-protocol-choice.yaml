@@ -1,0 +1,36 @@
+id: explain-clickhouse-protocol-choice
+category: datasource_config
+tags:
+- datasource
+- clickhouse
+- learn
+- protocol
+setup_datasources:
+- uid: clickhouse
+  name: ClickHouse
+  type: grafana-clickhouse-datasource
+  access: proxy
+  jsonData:
+    host: clickhouse.analytics.internal
+    port: 9000
+    protocol: native
+    secure: true
+    username: default
+    defaultDatabase: default
+statement: |
+  For ClickHouse, should I use the native protocol or HTTP, and what ports go with each?
+rubric:
+- criterion: The response explains the ClickHouse protocol and port choices (the requested outcome)
+  weight: 25
+  fact:
+    kind: resource
+    resource: datasource_detail
+    name: ClickHouse
+- criterion: Contrasts the native protocol (port 9000, or 9440 with TLS) versus HTTP (port 8123, or 8443 with TLS)
+  weight: 25
+- criterion: Notes native is typically faster and more efficient, while HTTP traverses proxies and load balancers more easily
+  weight: 20
+- criterion: Explains the secure/TLS toggle and its effect on the port
+  weight: 15
+- criterion: Mentions username/password and the default database as required connection fields
+  weight: 15

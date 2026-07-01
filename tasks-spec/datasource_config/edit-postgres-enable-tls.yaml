@@ -1,0 +1,49 @@
+id: edit-postgres-enable-tls
+category: datasource_config
+tags:
+- datasource
+- postgres
+- edit
+- tls
+setup_datasources:
+- uid: postgres
+  name: PostgreSQL
+  type: grafana-postgresql-datasource
+  access: proxy
+  url: db.internal:5432
+  user: grafana
+  database: analytics_db
+  jsonData:
+    sslmode: disable
+    postgresVersion: 1500
+statement: |
+  Security wants our PostgreSQL data source to stop connecting without TLS. Tighten it up.
+checks:
+- weight: 40
+  type: state
+  params:
+    mode: datasource_detail
+    name: PostgreSQL
+    type: grafana-postgresql-datasource
+    json_data:
+    - path: sslmode
+      any_of:
+      - require
+      - verify-ca
+      - verify-full
+  name: PostgreSQL datasource now enforces TLS via sslmode
+rubric:
+- criterion: The final response enables TLS on the PostgreSQL data source (the requested outcome)
+  weight: 20
+  fact:
+    kind: resource
+    resource: datasource_detail
+    name: PostgreSQL
+- criterion: Identifies that the source's SSL mode is currently 'disable' and must change
+  weight: 15
+- criterion: Recommends an sslmode that enforces TLS (require, verify-ca, or verify-full) and explains the trade-off, noting verify-full validates the server certificate and hostname
+  weight: 15
+- criterion: Notes that verify-ca and verify-full require providing the CA certificate
+  weight: 10
+- criterion: Leaves host, database, and credentials unchanged
+  weight: 10

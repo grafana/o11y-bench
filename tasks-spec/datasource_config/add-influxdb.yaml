@@ -1,0 +1,35 @@
+id: add-influxdb
+category: datasource_config
+tags:
+- datasource
+- influxdb
+- add
+statement: |
+  We run InfluxDB 3.x. Add a data source at http://influxdb.metrics.svc:8181 querying database
+  'telemetry' with an API token.
+checks:
+- weight: 40
+  type: state
+  params:
+    mode: datasource_detail
+    type: influxdb
+    require_url: true
+    json_data:
+    - path: version
+      equals: SQL
+  name: An InfluxDB datasource exists configured for SQL (InfluxDB 3.x)
+rubric:
+- criterion: The final response configures a new InfluxDB data source (the requested outcome)
+  weight: 20
+  fact:
+    kind: resource
+    resource: datasource_detail
+    type: influxdb
+- criterion: Selects the InfluxDB data source type and sets the URL to http://influxdb.metrics.svc:8181
+  weight: 15
+- criterion: Selects the SQL query language appropriate for InfluxDB 3.x rather than Flux or InfluxQL
+  weight: 15
+- criterion: Captures the target database/bucket telemetry
+  weight: 10
+- criterion: Stores the API token as a secret (secureJsonData)
+  weight: 10

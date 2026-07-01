@@ -1,0 +1,30 @@
+id: explain-infinity-config
+category: datasource_config
+tags:
+- datasource
+- infinity
+- learn
+- rest-api
+setup_datasources:
+- uid: infinity
+  name: Infinity
+  type: yesoreyeram-infinity-datasource
+  access: proxy
+  jsonData: {}
+statement: |
+  What can the Infinity data source connect to, and what do I configure?
+rubric:
+- criterion: The response explains Infinity data source configuration (the requested outcome)
+  weight: 25
+  fact:
+    kind: resource
+    resource: datasource_detail
+    name: Infinity
+- criterion: Describes Infinity as a source for JSON, CSV, XML, GraphQL, and HTML data fetched over HTTP/REST
+  weight: 25
+- criterion: Explains that the allowed hosts list restricts which URLs the data source can query
+  weight: 20
+- criterion: Covers authentication options (none, basic, bearer token, API key, OAuth2, or AWS SigV4)
+  weight: 15
+- criterion: Mentions choosing the parser/format and the URL or inline source type per query
+  weight: 15
