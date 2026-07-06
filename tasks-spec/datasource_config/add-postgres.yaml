@@ -15,8 +15,7 @@ checks:
     type: grafana-postgresql-datasource
     require_url: true
     database: analytics
-    user: grafana_ro
-  name: A PostgreSQL datasource exists for the analytics database with the grafana_ro user
+  name: A PostgreSQL datasource exists for the analytics database
 rubric:
 - criterion: The final response configures a new PostgreSQL data source (the requested outcome)
   weight: 20

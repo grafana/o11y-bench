@@ -53,3 +53,39 @@ def test_provision_task_resources_posts_dashboards(monkeypatch, tmp_path: Path, 
     out = capsys.readouterr().out
     assert "Provisioned dashboard service-overview" in out
     assert "Verified dashboard uid=service-overview is readable" in out
+
+
+def test_provision_task_resources_posts_datasources(monkeypatch, tmp_path: Path, capsys) -> None:
+    setup_path = tmp_path / "setup.json"
+    setup_path.write_text(
+        json.dumps(
+            {
+                "setup_datasources": [
+                    {
+                        "uid": "clickhouse",
+                        "name": "ClickHouse",
+                        "type": "grafana-clickhouse-datasource",
+                        "jsonData": {"protocol": "native"},
+                    }
+                ],
+            }
+        )
+    )
+
+    calls: list[tuple[str, str]] = []
+
+    def _urlopen(request_or_url, timeout=0):
+        method = getattr(request_or_url, "get_method", lambda: "GET")()
+        url = getattr(request_or_url, "full_url", request_or_url)
+        calls.append((method, url))
+        return _Response('{"datasource":{"uid":"clickhouse"}}')
+
+    monkeypatch.setattr(provision_task_resources.urllib.request, "urlopen", _urlopen)
+
+    provision_task_resources.provision_task_resources(str(setup_path))
+
+    base = provision_task_resources.GRAFANA_URL
+    # Existing datasource is deleted first (idempotent re-run), then created.
+    assert ("DELETE", f"{base}/api/datasources/uid/clickhouse") in calls
+    assert ("POST", f"{base}/api/datasources") in calls
+    assert "Provisioned datasource ClickHouse" in capsys.readouterr().out

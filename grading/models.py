@@ -263,10 +263,40 @@ class DatasourceInventoryStateParams(SpecModel):
         raise ValueError("datasource_inventory requires at least one expected type or name.")
 
 
+class JsonDataExpectation(SpecModel):
+    """Assert a value inside a datasource's jsonData, addressed by a dotted path.
+
+    Paths walk nested dicts (``tracesToLogsV2.datasourceUid``); a numeric segment
+    indexes into a list (``derivedFields.0.datasourceUid``).
+    """
+
+    path: str
+    equals: str | None = None
+    any_of: list[str] = Field(default_factory=list)
+    contains: str | None = None
+    present: bool = False
+
+    @model_validator(mode="after")
+    def validate_expectation(self) -> Self:
+        if (
+            self.equals is not None
+            or self.any_of
+            or self.contains is not None
+            or self.present
+        ):
+            return self
+        raise ValueError(
+            "jsonData expectations require equals, any_of, contains, or present."
+        )
+
+
 class DatasourceDetailStateParams(DatasourceSelector):
     mode: Literal["datasource_detail"]
     require_url: bool = False
     require_access: bool = False
+    access: str | None = None
+    database: str | None = None
+    json_data: list[JsonDataExpectation] = Field(default_factory=list)
 
 
 class TempoTraceServiceInventoryStateParams(SpecModel):
@@ -331,6 +361,7 @@ class Problem(SpecModel):
     rubric: list[RubricItem] = Field(default_factory=list)
     checks: list[CheckItem] = Field(default_factory=list)
     setup_dashboards: list[dict[str, Any]] = Field(default_factory=list)
+    setup_datasources: list[dict[str, Any]] = Field(default_factory=list)
 
 
 @dataclass

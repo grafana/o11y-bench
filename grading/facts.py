@@ -13,6 +13,7 @@ from grading.dashboard_snapshot import (
 from grading.env_context import (
     VerifierContext,
     default_tempo_search_window_sec,
+    fetch_grafana_datasource_full,
     fetch_grafana_datasources_checked,
     fetch_loki_query_result,
     fetch_prometheus_query_result,
@@ -245,11 +246,16 @@ def resolve_datasource_detail_fact(
             summary=f"Grafana did not return a datasource matching {ident}.",
             debug={"resource": fact.resource, "selector": {"name": fact.name, "type": fact.type}},
         )
+    full, _ = fetch_grafana_datasource_full(ctx.grafana_url, datasource, ctx.timeout_sec)
+    json_data_raw = full.get("jsonData")
+    json_data = json_data_raw if isinstance(json_data_raw, dict) else {}
     detail = {
-        "name": str(datasource.get("name", "")),
-        "type": str(datasource.get("type", "")),
-        "url": str(datasource.get("url", "")),
-        "access": str(datasource.get("access", "")),
+        "name": str(full.get("name", "")),
+        "type": str(full.get("type", "")),
+        "url": str(full.get("url", "")),
+        "access": str(full.get("access", "")),
+        "database": str(full.get("database", "")),
+        "jsonData": json_data,
     }
     debug = {
         "resource": fact.resource,
@@ -412,11 +418,17 @@ def render_datasource_detail_summary(item: dict[str, Any]) -> str:
     kind = str(item.get("type", "")).strip() or "unknown"
     url = str(item.get("url", "")).strip()
     access = str(item.get("access", "")).strip()
+    database = str(item.get("database", "")).strip()
     parts = [f"Grafana datasource {name} is type {kind}."]
     if url:
         parts.append(f"URL: {url}.")
     if access:
         parts.append(f"Access mode: {access}.")
+    if database:
+        parts.append(f"Database: {database}.")
+    json_data = item.get("jsonData")
+    if isinstance(json_data, dict) and json_data:
+        parts.append(f"jsonData: {json.dumps(json_data, sort_keys=True)}.")
     return " ".join(parts)
 
 

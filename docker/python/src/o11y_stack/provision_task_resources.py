@@ -28,15 +28,36 @@ def build_dashboard(payload: dict) -> dict:
     return dashboard
 
 
-def post_json(url: str, payload: dict) -> str:
+def request_json(url: str, payload: dict | None = None, method: str = "POST") -> str:
+    data = json.dumps(payload).encode() if payload is not None else None
     request = urllib.request.Request(
         url,
-        data=json.dumps(payload).encode(),
+        data=data,
         headers={"Content-Type": "application/json"},
-        method="POST",
+        method=method,
     )
     with urllib.request.urlopen(request, timeout=10) as response:
         return response.read().decode()
+
+
+def post_json(url: str, payload: dict) -> str:
+    return request_json(url, payload, method="POST")
+
+
+def provision_datasources(datasources: list[dict]) -> None:
+    for payload in datasources:
+        uid = payload.get("uid")
+        # Replace any pre-existing datasource with the same uid so re-runs are idempotent.
+        if uid:
+            try:
+                request_json(f"{GRAFANA_URL}/api/datasources/uid/{uid}", method="DELETE")
+            except urllib.error.HTTPError as exc:
+                if exc.code != 404:
+                    raise
+        body = dict(payload)
+        body.setdefault("access", "proxy")
+        response = post_json(f"{GRAFANA_URL}/api/datasources", body)
+        print(f"Provisioned datasource {payload.get('name', uid)}: {response}")
 
 
 def wait_dashboard_visible(uid: str, timeout_sec: float = 30.0) -> None:
@@ -62,10 +83,15 @@ def provision_task_resources(setup_path: str) -> None:
     with open(setup_path) as f:
         setup = json.load(f)
 
+    datasources = setup.get("setup_datasources") or []
+    if datasources:
+        provision_datasources(datasources)
+
     dashboards = setup.get("setup_dashboards") or []
 
     if not dashboards:
-        print("No task Grafana resources to provision")
+        if not datasources:
+            print("No task Grafana resources to provision")
         return
 
     for payload in dashboards:

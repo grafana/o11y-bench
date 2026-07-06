@@ -610,6 +610,36 @@ def resolve_grafana_datasource(
     return None, "Datasource validation requires a name or type selector."
 
 
+def fetch_grafana_datasource_full(
+    base_url: str, datasource: dict[str, Any], timeout_sec: float
+) -> tuple[dict[str, Any], str]:
+    """Return the full datasource record including jsonData.
+
+    The list endpoint (/api/datasources) omits jsonData on some Grafana versions,
+    so fetch the per-datasource detail by uid when one is available. Falls back to
+    the list record if the detail lookup fails.
+
+    Note: the detail response includes ``secureJsonFields`` only as a presence map
+    (``{field: true}`` for configured secrets); secret values are write-only and
+    are never returned.
+    """
+    if not base_url:
+        return datasource, "GRAFANA_URL is not set."
+    uid = str(datasource.get("uid", "")).strip()
+    if not uid:
+        return datasource, ""
+    url = f"{base_url}/api/datasources/uid/{uid}"
+    try:
+        payload = http_get_json(url, timeout_sec)
+    except urllib.error.HTTPError as exc:
+        return datasource, f"Grafana datasource detail HTTP {exc.code} for uid={uid}."
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        return datasource, f"Grafana datasource detail request failed: {exc}"
+    if not isinstance(payload, dict):
+        return datasource, "Grafana datasource detail is not an object."
+    return payload, ""
+
+
 def fetch_grafana_dashboard_model(
     base_url: str, uid: str, timeout_sec: float
 ) -> tuple[dict[str, Any] | None, str]:

@@ -163,6 +163,127 @@ def test_state_datasource_detail_requires_configured_detail() -> None:
     assert "matches the expected state" in explanations["datasource detail"]
 
 
+def _run_datasource_detail_check(params: dict, detail: dict) -> tuple[float, str]:
+    listing = [
+        {
+            "name": detail["name"],
+            "type": detail["type"],
+            "uid": detail.get("uid", "ds"),
+            "url": detail.get("url", ""),
+            "access": detail.get("access", ""),
+        }
+    ]
+    with (
+        patch(
+            "grading.checks.fetch_grafana_datasources_checked",
+            return_value=(listing, None),
+        ),
+        patch("grading.checks.fetch_grafana_datasource_full", return_value=(detail, "")),
+    ):
+        scores, explanations = run_checks(
+            [
+                CheckItem.model_validate(
+                    {
+                        "name": "datasource detail",
+                        "weight": 1.0,
+                        "type": "state",
+                        "params": {"mode": "datasource_detail", **params},
+                    }
+                )
+            ],
+            Transcript(messages=[]),
+            VerifierContext(grafana_url="http://grafana"),
+        )
+    return scores["datasource detail"], explanations["datasource detail"]
+
+
+def test_state_datasource_detail_json_data_equals_and_any_of() -> None:
+    detail = {
+        "name": "ClickHouse",
+        "type": "grafana-clickhouse-datasource",
+        "jsonData": {"protocol": "http", "port": 8443, "secure": True},
+    }
+    score, _ = _run_datasource_detail_check(
+        {
+            "name": "ClickHouse",
+            "json_data": [
+                {"path": "protocol", "equals": "http"},
+                {"path": "port", "any_of": ["8123", "8443"]},
+                {"path": "secure", "equals": "true"},
+            ],
+        },
+        detail,
+    )
+    assert score == 1.0
+
+
+def test_state_datasource_detail_json_data_mismatch_fails() -> None:
+    detail = {
+        "name": "ClickHouse",
+        "type": "grafana-clickhouse-datasource",
+        "jsonData": {"protocol": "native"},
+    }
+    score, explanation = _run_datasource_detail_check(
+        {"name": "ClickHouse", "json_data": [{"path": "protocol", "equals": "http"}]},
+        detail,
+    )
+    assert score == 0.0
+    assert "protocol" in explanation
+
+
+def test_state_datasource_detail_nested_path_and_present() -> None:
+    detail = {
+        "name": "Tempo",
+        "type": "tempo",
+        "jsonData": {"tracesToLogsV2": {"datasourceUid": "loki"}},
+    }
+    score, _ = _run_datasource_detail_check(
+        {
+            "name": "Tempo",
+            "json_data": [
+                {"path": "tracesToLogsV2", "present": True},
+                {"path": "tracesToLogsV2.datasourceUid", "equals": "loki"},
+            ],
+        },
+        detail,
+    )
+    assert score == 1.0
+
+
+def test_state_datasource_detail_contains_searches_serialized_list() -> None:
+    detail = {
+        "name": "Loki",
+        "type": "loki",
+        "jsonData": {"derivedFields": [{"name": "TraceID", "datasourceUid": "tempo"}]},
+    }
+    score, _ = _run_datasource_detail_check(
+        {
+            "name": "Loki",
+            "json_data": [
+                {"path": "derivedFields", "present": True},
+                {"path": "derivedFields", "contains": "tempo"},
+            ],
+        },
+        detail,
+    )
+    assert score == 1.0
+
+
+def test_state_datasource_detail_database() -> None:
+    detail = {
+        "name": "MySQL",
+        "type": "mysql",
+        "url": "mysql.prod.internal:3306",
+        "access": "proxy",
+        "database": "appdb",
+    }
+    score, _ = _run_datasource_detail_check(
+        {"type": "mysql", "require_url": True, "database": "appdb"},
+        detail,
+    )
+    assert score == 1.0
+
+
 def test_state_tempo_trace_service_inventory_uses_attribute_values() -> None:
     with patch(
         "grading.checks.fetch_tempo_attribute_values",

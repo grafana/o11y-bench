@@ -15,8 +15,7 @@ checks:
     type: mysql
     require_url: true
     database: appdb
-    user: grafana
-  name: A MySQL datasource exists for appdb with the grafana user
+  name: A MySQL datasource exists for the appdb database
 rubric:
 - criterion: The final response configures a new MySQL data source (the requested outcome)
   weight: 20

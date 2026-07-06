@@ -10,7 +10,10 @@ datasources:
     basicAuth: false
     isDefault: true
     version: 1
-    editable: false
+    editable: true
+    jsonData:
+      # Seeded to a 30s scrape interval so edit-prometheus-scrape-interval has a real change to make.
+      timeInterval: "30s"
 
   - name: Loki
     type: loki
@@ -21,13 +24,8 @@ datasources:
     basicAuth: false
     isDefault: false
     version: 1
-    editable: false
-    jsonData:
-      derivedFields:
-        - datasourceUid: tempo
-          matcherRegex: "\"trace_id\":\\s*\"([a-f0-9]+)\""
-          name: TraceID
-          url: "$${__value.raw}"
+    editable: true
+    # No derivedFields seeded: edit-loki-derived-fields adds the trace_id -> Tempo derived field.
 
   - name: Tempo
     type: tempo
@@ -38,14 +36,9 @@ datasources:
     basicAuth: false
     isDefault: false
     version: 1
-    editable: false
+    editable: true
     jsonData:
-      tracesToLogsV2:
-        datasourceUid: loki
-        spanStartTimeShift: "-1h"
-        spanEndTimeShift: "1h"
-        filterByTraceID: true
-        filterBySpanID: false
+      # No tracesToLogsV2 / lokiSearch seeded: edit-tempo-traces-to-logs wires the Tempo -> Loki correlation.
       tracesToMetrics:
         datasourceUid: prometheus
         spanStartTimeShift: "-1h"
@@ -54,5 +47,3 @@ datasources:
         datasourceUid: prometheus
       nodeGraph:
         enabled: true
-      lokiSearch:
-        datasourceUid: loki

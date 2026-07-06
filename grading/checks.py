@@ -1,7 +1,11 @@
+import json
+from typing import Any
+
 from grading.dashboard_state import validate_dashboard_state
 from grading.env_context import (
     VerifierContext,
     default_tempo_search_window_sec,
+    fetch_grafana_datasource_full,
     fetch_grafana_datasources_checked,
     fetch_tempo_attribute_values,
     resolve_grafana_datasource,
@@ -22,6 +26,7 @@ from grading.models import (
     DashboardStateParams,
     DatasourceDetailStateParams,
     DatasourceInventoryStateParams,
+    JsonDataExpectation,
     TempoTraceServiceInventoryStateParams,
     ToolTraceIdGroundingParams,
     Transcript,
@@ -138,6 +143,64 @@ def validate_datasource_inventory(
     return 1.0, f"Grafana has the expected datasource inventory ({len(datasources)} datasources)."
 
 
+def resolve_json_path(data: Any, path: str) -> Any:
+    """Walk a dotted path through nested dicts/lists. Numeric segments index lists."""
+    current = data
+    for segment in path.split("."):
+        if isinstance(current, dict):
+            if segment not in current:
+                return None
+            current = current[segment]
+        elif isinstance(current, list):
+            if not segment.isdigit():
+                return None
+            index = int(segment)
+            if index >= len(current):
+                return None
+            current = current[index]
+        else:
+            return None
+    return current
+
+
+def normalize_json_value(value: Any) -> str:
+    """Render a jsonData value for string comparison (booleans as lowercase)."""
+    if isinstance(value, bool):
+        return str(value).lower()
+    return str(value)
+
+
+def evaluate_json_data_expectation(
+    json_data: dict[str, Any], expectation: JsonDataExpectation
+) -> str | None:
+    """Return an error message if the expectation fails, else None."""
+    value = resolve_json_path(json_data, expectation.path)
+    if expectation.present:
+        if value is None or value == "" or value == [] or value == {}:
+            return f"jsonData path {expectation.path!r} is not set."
+    normalized = normalize_json_value(value)
+    if expectation.equals is not None:
+        if normalized != expectation.equals:
+            return (
+                f"jsonData path {expectation.path!r} is {value!r}, "
+                f"expected {expectation.equals!r}."
+            )
+    if expectation.any_of:
+        if normalized not in expectation.any_of:
+            return (
+                f"jsonData path {expectation.path!r} is {value!r}, "
+                f"expected one of {expectation.any_of}."
+            )
+    if expectation.contains is not None:
+        rendered = json.dumps(value) if not isinstance(value, str) else value
+        if expectation.contains not in rendered:
+            return (
+                f"jsonData path {expectation.path!r} does not contain "
+                f"{expectation.contains!r}."
+            )
+    return None
+
+
 def validate_datasource_detail(
     params: DatasourceDetailStateParams,
     ctx: VerifierContext | None,
@@ -162,6 +225,29 @@ def validate_datasource_detail(
         return 0.0, "Datasource does not have a URL configured."
     if params.require_access and not str(datasource.get("access", "")).strip():
         return 0.0, "Datasource does not have an access mode configured."
+    if params.access and str(datasource.get("access", "")).lower() != params.access.lower():
+        return 0.0, f"Datasource access is {datasource.get('access')!r}, expected {params.access!r}."
+
+    # Read the per-uid detail for database/jsonData: the list endpoint omits jsonData on some
+    # Grafana versions. Falls back to the list record if the detail lookup fails.
+    # Note: we deliberately do not check `user` — the datasource username is a credential-adjacent
+    # field the MCP write tools may exclude (and Grafana may omit on read), so it is graded by
+    # rubric instead of a deterministic check.
+    assert ctx is not None
+    detail, _ = fetch_grafana_datasource_full(ctx.grafana_url, datasource, ctx.timeout_sec)
+
+    if params.database and str(detail.get("database", "")) != params.database:
+        return 0.0, f"Datasource database is {detail.get('database')!r}, expected {params.database!r}."
+
+    if params.json_data:
+        json_data = detail.get("jsonData")
+        if not isinstance(json_data, dict):
+            return 0.0, "Datasource has no jsonData to evaluate."
+        for expectation in params.json_data:
+            failure = evaluate_json_data_expectation(json_data, expectation)
+            if failure:
+                return 0.0, failure
+
     return 1.0, "Datasource detail exists and matches the expected state."
 
 

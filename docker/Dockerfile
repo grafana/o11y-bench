@@ -14,7 +14,8 @@ RUN apk add --no-cache \
     python3
 
 # Install mcp-grafana (uses x86_64 instead of amd64 in release names)
-ARG MCP_GRAFANA_VERSION=0.11.6
+# v0.17.0+ ships create_datasource / update_datasource (write tools, on by default).
+ARG MCP_GRAFANA_VERSION=0.17.0
 RUN MCP_ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "arm64" || echo "x86_64") && \
     curl -fsSL https://github.com/grafana/mcp-grafana/releases/download/v${MCP_GRAFANA_VERSION}/mcp-grafana_Linux_${MCP_ARCH}.tar.gz \
     | tar xz -C /usr/local/bin mcp-grafana && \
@@ -39,6 +40,12 @@ RUN curl -fsSL https://github.com/grafana/loki/releases/download/v${LOKI_VERSION
 ARG TEMPO_VERSION=2.10.3
 RUN curl -fsSL https://github.com/grafana/tempo/releases/download/v${TEMPO_VERSION}/tempo_${TEMPO_VERSION}_linux_${TARGETARCH}.tar.gz \
     | tar xz -C /usr/local/bin tempo
+
+# Pre-install datasource plugins used by datasource_config tasks (mysql/postgres/influxdb
+# are bundled in core). These let create_datasource succeed for plugin-backed types.
+RUN /usr/share/grafana/bin/grafana cli --pluginsDir /var/lib/grafana/plugins plugins install grafana-clickhouse-datasource && \
+    /usr/share/grafana/bin/grafana cli --pluginsDir /var/lib/grafana/plugins plugins install grafana-bigquery-datasource && \
+    /usr/share/grafana/bin/grafana cli --pluginsDir /var/lib/grafana/plugins plugins install yesoreyeram-infinity-datasource
 
 # Create directories for all services
 RUN mkdir -p \
