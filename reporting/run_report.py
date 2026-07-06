@@ -94,8 +94,11 @@ def _tool_result_plaintext(content: object) -> str:
 # Transcript rendering (Harbor JSONL format)
 # ---------------------------------------------------------------------------
 
+# Default preview length for tool-call arguments; --full-args shows them untruncated.
+TOOL_ARG_PREVIEW_LIMIT = 150
 
-def render_transcript(messages: list[JsonDict]) -> str:
+
+def render_transcript(messages: list[JsonDict], full_args: bool = False) -> str:
     """Render Harbor-format transcript JSONL messages to HTML.
 
     Harbor message format:
@@ -193,8 +196,8 @@ def render_transcript(messages: list[JsonDict]) -> str:
                     tc_id = block.get("id", "")
                     tc_input = block.get("input", {})
                     args_compact = json.dumps(tc_input, separators=(",", ":"))
-                    if len(args_compact) > 150:
-                        args_compact = args_compact[:150] + "..."
+                    if not full_args and len(args_compact) > TOOL_ARG_PREVIEW_LIMIT:
+                        args_compact = args_compact[:TOOL_ARG_PREVIEW_LIMIT] + "..."
 
                     result_content = tc_to_result.get(tc_id, "")
                     result_html = ""
@@ -382,7 +385,7 @@ def load_trials(job_dir: Path) -> list[JsonDict]:
 # ---------------------------------------------------------------------------
 
 
-def render_trial_detail(trial: JsonDict) -> str:
+def render_trial_detail(trial: JsonDict, full_args: bool = False) -> str:
     result = trial["result"]
     grading = trial["grading"]
     transcript = trial["transcript"]
@@ -397,7 +400,7 @@ def render_trial_detail(trial: JsonDict) -> str:
     duration_s = agent_seconds(result)
 
     criteria_html = render_criteria(grading)
-    transcript_html = render_transcript(transcript)
+    transcript_html = render_transcript(transcript, full_args=full_args)
 
     error_html = ""
     if has_error:
@@ -443,7 +446,7 @@ def render_trial_detail(trial: JsonDict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def generate_report(job_dir: Path, tasks_dir: Path | None = None) -> str:
+def generate_report(job_dir: Path, tasks_dir: Path | None = None, full_args: bool = False) -> str:
     resolved_tasks_dir = resolve_tasks_dir(job_dir, tasks_dir)
     categories: dict[str, str] = {}
     if resolved_tasks_dir:
@@ -549,7 +552,7 @@ def generate_report(job_dir: Path, tasks_dir: Path | None = None) -> str:
                 shot_cost = agent_result_metrics(r)[0]
                 has_err = r.get("exception_info") is not None
                 vp = grading_counts_as_pass(r, g)
-                detail_html = render_trial_detail(trial)
+                detail_html = render_trial_detail(trial, full_args=full_args)
                 shot_htmls.append(f"""
               <details class="bg-gray-50 rounded border border-gray-100 mb-1">
                 <summary class="flex items-center justify-between p-2 cursor-pointer hover:bg-gray-100">
@@ -588,7 +591,7 @@ def generate_report(job_dir: Path, tasks_dir: Path | None = None) -> str:
             r = trial["result"]
             g = trial["grading"]
             vp = grading_counts_as_pass(r, g)
-            detail_html = render_trial_detail(trial)
+            detail_html = render_trial_detail(trial, full_args=full_args)
             compressed_details[task_name] = compress_text(detail_html)
 
             shot_cost = agent_result_metrics(r)[0]
@@ -738,9 +741,14 @@ def generate_report(job_dir: Path, tasks_dir: Path | None = None) -> str:
     )
 
 
-def write_report(job_dir: Path, tasks_dir: Path | None = None, output: Path | None = None) -> Path:
+def write_report(
+    job_dir: Path,
+    tasks_dir: Path | None = None,
+    output: Path | None = None,
+    full_args: bool = False,
+) -> Path:
     report_path = run_report_output_path(job_dir, output)
-    report_html = generate_report(job_dir, tasks_dir=tasks_dir)
+    report_html = generate_report(job_dir, tasks_dir=tasks_dir, full_args=full_args)
     report_path.write_text(report_html)
     return report_path
 
@@ -770,6 +778,11 @@ def main() -> None:
         default=None,
         help="Output HTML file (default: <job-dir>/run_report.html)",
     )
+    parser.add_argument(
+        "--full-args",
+        action="store_true",
+        help="Show tool-call arguments in full instead of truncating to a short preview.",
+    )
     args = parser.parse_args()
 
     job_dir = args.job_dir.resolve()
@@ -777,7 +790,9 @@ def main() -> None:
         print(f"Job directory not found: {job_dir}", file=sys.stderr)
         sys.exit(1)
 
-    output = write_report(job_dir, tasks_dir=args.tasks_dir, output=args.output)
+    output = write_report(
+        job_dir, tasks_dir=args.tasks_dir, output=args.output, full_args=args.full_args
+    )
     print(f"Report written to {output}", file=sys.stderr)
 
 
