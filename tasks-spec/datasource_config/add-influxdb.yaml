@@ -31,5 +31,3 @@ rubric:
   weight: 15
 - criterion: Captures the target database/bucket telemetry
   weight: 10
-- criterion: Stores the API token as a secret (secureJsonData)
-  weight: 10
