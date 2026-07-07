@@ -122,3 +122,50 @@ def test_load_atif_trajectory_accepts_legacy_harbor_results(tmp_path) -> None:
     assert [message["type"] for message in transcript] == ["user", "assistant", "tool_result"]
     assert transcript[1]["message"]["content"][0]["name"] == "query_loki"
     assert transcript[2]["content"] == "error log"
+
+
+def test_render_transcript_truncates_long_args_by_default() -> None:
+    payload = "x" * 300
+    messages = [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "1",
+                        "name": "create_datasource",
+                        "input": {"extra": payload},
+                    }
+                ]
+            },
+        }
+    ]
+
+    html = run_report.render_transcript(messages)
+
+    assert "..." in html
+    assert payload not in html
+
+
+def test_render_transcript_full_args_shows_untruncated_payload() -> None:
+    payload = "x" * 300
+    messages = [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "1",
+                        "name": "create_datasource",
+                        "input": {"extra": payload},
+                    }
+                ]
+            },
+        }
+    ]
+
+    html = run_report.render_transcript(messages, full_args=True)
+
+    assert payload in html
