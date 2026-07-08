@@ -192,11 +192,16 @@ wait_for_service "http://localhost:9090/-/ready" "Prometheus" "$PROMETHEUS_MAX_A
 wait_for_service "http://localhost:3000/api/health" "Grafana" "$GRAFANA_MAX_ATTEMPTS" "$GRAFANA_LOG"
 provision_task_resources
 
-# Start mcp-grafana in streamable-http mode for Harbor agent access
+# Start mcp-grafana in streamable-http mode for Harbor agent access.
+# --allowed-hosts "*" disables the DNS-rebinding Host allowlist (newer mcp-grafana defaults to
+# loopback-only, which 403s the agent's requests to the sidecar's container hostname). Safe here:
+# the sidecar is a local, per-trial container on an internal Docker network. NOTE: this flag only
+# exists in newer builds; it is not recognized by the pinned 0.17.0 release.
 echo "Starting mcp-grafana (streamable-http on :8080)..."
 GRAFANA_URL=http://localhost:3000 /usr/local/bin/mcp-grafana \
     -t streamable-http \
     --address :8080 \
+    --allowed-hosts "*" \
     --disable-sift \
     --disable-oncall \
     --disable-incident \

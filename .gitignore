@@ -31,3 +31,4 @@ tasks-level2/
 .cache
 .agents
 environment/gcx
+docker/mcp-grafana

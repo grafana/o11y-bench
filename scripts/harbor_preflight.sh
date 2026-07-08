@@ -109,18 +109,24 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # If LOCAL_GCX points to a binary, copy it into the build context so the
 # Dockerfile picks it up instead of downloading from GitHub.
-# Trap ensures cleanup even if the build fails, so a stale binary doesn't
-# silently get used on the next build.
 if [ -n "${LOCAL_GCX:-}" ]; then
   echo "Using local gcx binary: $LOCAL_GCX"
   cp "$LOCAL_GCX" "$ROOT/environment/gcx"
   chmod +x "$ROOT/environment/gcx"
-  trap 'rm -f "$ROOT/environment/gcx"' EXIT INT TERM
+  trap 'rm -f "$ROOT/environment/gcx" "$ROOT/docker/mcp-grafana"' EXIT INT TERM
 else
-  # make sure we remove leftover artifacts in the case where LOCAL_GCX is unset,
-  # to avoid accidentally using a stale local build.
   rm -f "$ROOT/environment/gcx"
+  trap 'rm -f "$ROOT/docker/mcp-grafana"' EXIT INT TERM
 fi
+
+# TEMPORARY: build mcp-grafana from the local ../mcp-grafana sibling checkout and drop the
+# Linux binary into the docker/ build context (the sidecar Dockerfile COPYs it). The COPY
+# layer's cache invalidates when the binary changes, so each build reflects the local source.
+# To go back to the pinned release, restore docker/Dockerfile's download step and delete this.
+MCP_SRC="$ROOT/../mcp-grafana"
+MCP_GOARCH=$([ "$(uname -m)" = "x86_64" ] && echo "amd64" || echo "arm64")
+echo "Building local mcp-grafana from $MCP_SRC for linux/$MCP_GOARCH"
+( cd "$MCP_SRC" && CGO_ENABLED=0 GOOS=linux GOARCH="$MCP_GOARCH" go build -o "$ROOT/docker/mcp-grafana" ./cmd/mcp-grafana )
 
 echo "Building shared Harbor main image: o11y-bench-main:latest"
 

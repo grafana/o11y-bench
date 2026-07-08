@@ -13,13 +13,12 @@ RUN apk add --no-cache \
     ca-certificates \
     python3
 
-# Install mcp-grafana (uses x86_64 instead of amd64 in release names)
-# v0.17.0+ ships create_datasource / update_datasource (write tools, on by default).
-ARG MCP_GRAFANA_VERSION=0.17.0
-RUN MCP_ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "arm64" || echo "x86_64") && \
-    curl -fsSL https://github.com/grafana/mcp-grafana/releases/download/v${MCP_GRAFANA_VERSION}/mcp-grafana_Linux_${MCP_ARCH}.tar.gz \
-    | tar xz -C /usr/local/bin mcp-grafana && \
-    chmod +x /usr/local/bin/mcp-grafana
+# Install mcp-grafana.
+# TEMPORARY: installed from a locally-built binary that scripts/harbor_preflight.sh compiles
+# from the ../mcp-grafana sibling checkout and drops into this build context. To restore the
+# pinned release download, see git history for the previous curl-based step.
+COPY mcp-grafana /usr/local/bin/mcp-grafana
+RUN chmod +x /usr/local/bin/mcp-grafana
 
 # Install Prometheus
 ARG PROMETHEUS_VERSION=3.10.0
