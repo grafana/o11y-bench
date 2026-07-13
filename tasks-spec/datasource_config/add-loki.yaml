@@ -6,9 +6,19 @@ tags:
 - add
 statement: |
   Add a Loki data source at http://loki.monitoring.svc:3100 for our logs.
+checks:
+- weight: 40
+  type: state
+  params:
+    mode: datasource_detail
+    type: loki
+    url_contains: loki.monitoring.svc:3100
+    exclude_uids:
+    - loki
+  name: A Loki datasource exists pointing at loki.monitoring.svc:3100
 rubric:
 - criterion: The final response configures a new Loki data source pointing at http://loki.monitoring.svc:3100 (the requested outcome)
-  weight: 25
+  weight: 20
   fact:
     kind: resource
     resource: datasource_inventory

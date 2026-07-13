@@ -7,9 +7,19 @@ tags:
 statement: |
   Set up a new Prometheus data source pointing at http://prometheus.monitoring.svc:9090. We're
   running vanilla Prometheus.
+checks:
+- weight: 40
+  type: state
+  params:
+    mode: datasource_detail
+    type: prometheus
+    url_contains: prometheus.monitoring.svc:9090
+    exclude_uids:
+    - prometheus
+  name: A Prometheus datasource exists pointing at prometheus.monitoring.svc:9090
 rubric:
 - criterion: The final response configures a new Prometheus data source pointing at http://prometheus.monitoring.svc:9090 (the requested outcome)
-  weight: 25
+  weight: 20
   fact:
     kind: resource
     resource: datasource_inventory

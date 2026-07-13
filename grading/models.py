@@ -295,6 +295,8 @@ class DatasourceDetailStateParams(DatasourceSelector):
     require_url: bool = False
     require_access: bool = False
     access: str | None = None
+    url_contains: str | None = None
+    exclude_uids: list[str] = Field(default_factory=list)
     database: str | None = None
     json_data: list[JsonDataExpectation] = Field(default_factory=list)
 

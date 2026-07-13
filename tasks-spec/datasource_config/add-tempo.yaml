@@ -6,9 +6,19 @@ tags:
 - add
 statement: |
   I want to connect a Tempo backend at http://tempo.monitoring.svc:3200 for traces.
+checks:
+- weight: 40
+  type: state
+  params:
+    mode: datasource_detail
+    type: tempo
+    url_contains: tempo.monitoring.svc:3200
+    exclude_uids:
+    - tempo
+  name: A Tempo datasource exists pointing at tempo.monitoring.svc:3200
 rubric:
 - criterion: The final response configures a new Tempo data source pointing at http://tempo.monitoring.svc:3200 (the requested outcome)
-  weight: 25
+  weight: 20
   fact:
     kind: resource
     resource: datasource_inventory

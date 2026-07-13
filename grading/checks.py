@@ -201,6 +201,41 @@ def evaluate_json_data_expectation(
     return None
 
 
+def match_datasource_by_url(
+    datasources: list[dict[str, Any]],
+    url_contains: str,
+    *,
+    name: str | None,
+    datasource_type: str | None,
+    exclude_uids: list[str] | None = None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Find a datasource whose URL contains ``url_contains``, scoped by name/type.
+
+    Unlike ``resolve_grafana_datasource`` (which returns the first match by type),
+    this scans all datasources so a newly added source at the requested URL is not
+    shadowed by a same-type seed pointing elsewhere.
+
+    ``exclude_uids`` drops pre-seeded datasources (e.g. the base-stack ``loki`` uid) so
+    the match proves the agent *added* a source rather than merely confirming a seed that
+    happens to sit at the requested URL.
+    """
+    want = url_contains.strip().lower()
+    type_want = datasource_type.strip().lower() if datasource_type else None
+    excluded = set(exclude_uids or [])
+    for item in datasources:
+        if str(item.get("uid", "")) in excluded:
+            continue
+        if name and str(item.get("name", "")) != name:
+            continue
+        if type_want and str(item.get("type", "")).strip().lower() != type_want:
+            continue
+        if want in str(item.get("url", "")).strip().lower():
+            return item, None
+    selector = datasource_type or name or "datasource"
+    suffix = f" (excluding uids {sorted(excluded)})" if excluded else ""
+    return None, f"No {selector} datasource has a URL containing {url_contains!r}{suffix}."
+
+
 def validate_datasource_detail(
     params: DatasourceDetailStateParams,
     ctx: VerifierContext | None,
@@ -210,11 +245,20 @@ def validate_datasource_detail(
         return 0.0, err
     assert datasources is not None
 
-    datasource, err = resolve_grafana_datasource(
-        datasources,
-        name=params.name,
-        datasource_type=params.type,
-    )
+    if params.url_contains:
+        datasource, err = match_datasource_by_url(
+            datasources,
+            params.url_contains,
+            name=params.name,
+            datasource_type=params.type,
+            exclude_uids=params.exclude_uids,
+        )
+    else:
+        datasource, err = resolve_grafana_datasource(
+            datasources,
+            name=params.name,
+            datasource_type=params.type,
+        )
     if err:
         return 0.0, err
     assert datasource is not None

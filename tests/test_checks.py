@@ -284,6 +284,77 @@ def test_state_datasource_detail_database() -> None:
     assert score == 1.0
 
 
+def _run_datasource_detail_check_multi(
+    params: dict, listing: list[dict], detail: dict
+) -> tuple[float, str]:
+    with (
+        patch(
+            "grading.checks.fetch_grafana_datasources_checked",
+            return_value=(listing, None),
+        ),
+        patch("grading.checks.fetch_grafana_datasource_full", return_value=(detail, "")),
+    ):
+        scores, explanations = run_checks(
+            [
+                CheckItem.model_validate(
+                    {
+                        "name": "datasource detail",
+                        "weight": 1.0,
+                        "type": "state",
+                        "params": {"mode": "datasource_detail", **params},
+                    }
+                )
+            ],
+            Transcript(messages=[]),
+            VerifierContext(grafana_url="http://grafana"),
+        )
+    return scores["datasource detail"], explanations["datasource detail"]
+
+
+def test_state_datasource_detail_url_contains_finds_new_source_past_seed() -> None:
+    # A localhost seed of the same type must not shadow the newly added source at the
+    # requested URL (the add-loki / add-prometheus / add-tempo blind-spot fix).
+    listing = [
+        {"name": "Loki", "type": "loki", "uid": "loki", "url": "http://localhost:3100"},
+        {"name": "Logs", "type": "loki", "uid": "new", "url": "http://loki.monitoring.svc:3100"},
+    ]
+    score, explanation = _run_datasource_detail_check_multi(
+        {"type": "loki", "url_contains": "loki.monitoring.svc:3100", "exclude_uids": ["loki"]},
+        listing,
+        {"name": "Logs", "type": "loki", "url": "http://loki.monitoring.svc:3100"},
+    )
+    assert score == 1.0
+    assert "matches the expected state" in explanation
+
+
+def test_state_datasource_detail_url_contains_fails_when_only_seed_present() -> None:
+    listing = [
+        {"name": "Loki", "type": "loki", "uid": "loki", "url": "http://localhost:3100"},
+    ]
+    score, explanation = _run_datasource_detail_check_multi(
+        {"type": "loki", "url_contains": "loki.monitoring.svc:3100", "exclude_uids": ["loki"]},
+        listing,
+        {},
+    )
+    assert score == 0.0
+    assert "loki.monitoring.svc:3100" in explanation
+
+
+def test_state_datasource_detail_excluded_seed_at_requested_url_does_not_pass() -> None:
+    # If the agent does nothing but the seed happens to sit at the requested URL, the
+    # excluded seed uid must not satisfy the check (no real datasource was added).
+    listing = [
+        {"name": "Loki", "type": "loki", "uid": "loki", "url": "http://loki.monitoring.svc:3100"},
+    ]
+    score, explanation = _run_datasource_detail_check_multi(
+        {"type": "loki", "url_contains": "loki.monitoring.svc:3100", "exclude_uids": ["loki"]},
+        listing,
+        {},
+    )
+    assert score == 0.0
+    assert "loki" in explanation
+
+
 def test_state_tempo_trace_service_inventory_uses_attribute_values() -> None:
     with patch(
         "grading.checks.fetch_tempo_attribute_values",
