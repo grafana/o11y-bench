@@ -9,7 +9,7 @@ statement: |
   I need to pull JSON from an internal REST API at https://api.internal.example.com into Grafana.
   Which data source and how do I set it up?
 checks:
-- weight: 35
+- weight: 40
   type: state
   params:
     mode: datasource_detail
@@ -28,6 +28,6 @@ rubric:
 - criterion: Explains adding the API host to the allowed hosts list (for example https://api.internal.example.com)
   weight: 15
 - criterion: Describes selecting the JSON parser and the URL source type for the query
-  weight: 10
+  weight: 5
 - criterion: Mentions authentication options (bearer token, basic auth, or API key) for the upstream API
-  weight: 10
+  weight: 5

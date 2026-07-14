@@ -24,10 +24,6 @@ rubric:
     kind: resource
     resource: datasource_inventory
 - criterion: Selects the Loki data source type and sets the URL to http://loki.monitoring.svc:3100 with proxy (server) access
-  weight: 20
-- criterion: Mentions the maximum lines (maxLines) setting that caps how many log lines a query returns
-  weight: 15
-- criterion: Describes derived fields to extract a trace ID from log lines and link to a Tempo data source for trace correlation
-  weight: 15
+  weight: 25
 - criterion: Covers authentication options for securing the connection
-  weight: 10
+  weight: 15

@@ -44,6 +44,6 @@ rubric:
 - criterion: Recommends an sslmode that enforces TLS (require, verify-ca, or verify-full) and explains the trade-off, noting verify-full validates the server certificate and hostname
   weight: 15
 - criterion: Notes that verify-ca and verify-full require providing the CA certificate
-  weight: 10
+  weight: 5
 - criterion: Leaves host, database, and credentials unchanged
-  weight: 10
+  weight: 5

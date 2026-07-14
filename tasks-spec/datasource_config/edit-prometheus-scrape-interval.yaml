@@ -21,7 +21,7 @@ checks:
   name: Prometheus datasource scrape interval is now 15s
 rubric:
 - criterion: The final response updates the Prometheus scrape interval setting (the requested outcome)
-  weight: 25
+  weight: 20
   fact:
     kind: resource
     resource: datasource_detail
@@ -31,6 +31,6 @@ rubric:
 - criterion: Sets the scrape interval to 15s to match the new scrape cadence
   weight: 15
 - criterion: Explains this controls the minimum query step / $__interval lower bound
-  weight: 10
+  weight: 5
 - criterion: Leaves other connection settings (URL, access mode) unchanged
-  weight: 10
+  weight: 5

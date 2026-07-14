@@ -29,13 +29,13 @@ rubric:
     resource: datasource_detail
     name: Loki
 - criterion: Adds a derived field with a regex matcher that extracts trace_id from the log line
-  weight: 20
+  weight: 15
 - criterion: Sets the derived field to link to the Tempo data source via an internal link (datasourceUid)
   weight: 15
   fact:
     kind: resource
     resource: datasource_inventory
 - criterion: Names the field (for example TraceID) so it surfaces as a link in the log detail view
-  weight: 10
+  weight: 5
 - criterion: Preserves the existing connection settings
-  weight: 10
+  weight: 5

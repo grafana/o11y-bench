@@ -46,6 +46,6 @@ rubric:
 - criterion: Updates the port from the native default (9000) to the HTTP default (8123), or 8443 when secure/TLS is enabled
   weight: 15
 - criterion: Keeps host, username, and secure/TLS settings consistent with the protocol change
-  weight: 10
+  weight: 5
 - criterion: Notes the default database and other connection settings remain unchanged
-  weight: 10
+  weight: 5
