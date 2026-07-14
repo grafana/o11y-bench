@@ -5,15 +5,6 @@ tags:
 - bigquery
 - learn
 - authentication
-setup_datasources:
-- uid: bigquery
-  name: BigQuery
-  type: grafana-bigquery-datasource
-  access: proxy
-  jsonData:
-    authenticationType: jwt
-    defaultProject: demo-project
-    clientEmail: grafana@demo-project.iam.gserviceaccount.com
 statement: |
   How does authentication work for the BigQuery data source?
 rubric:

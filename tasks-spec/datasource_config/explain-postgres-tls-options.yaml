@@ -5,17 +5,6 @@ tags:
 - postgres
 - learn
 - tls
-setup_datasources:
-- uid: postgres
-  name: PostgreSQL
-  type: grafana-postgresql-datasource
-  access: proxy
-  url: db.internal:5432
-  user: grafana
-  database: analytics_db
-  jsonData:
-    sslmode: disable
-    postgresVersion: 1500
 statement: |
   What are the SSL/TLS options for a PostgreSQL data source and which should I use?
 rubric:

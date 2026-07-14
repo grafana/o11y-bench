@@ -5,18 +5,6 @@ tags:
 - clickhouse
 - learn
 - protocol
-setup_datasources:
-- uid: clickhouse
-  name: ClickHouse
-  type: grafana-clickhouse-datasource
-  access: proxy
-  jsonData:
-    host: clickhouse.analytics.internal
-    port: 9000
-    protocol: native
-    secure: true
-    username: default
-    defaultDatabase: default
 statement: |
   For ClickHouse, should I use the native protocol or HTTP, and what ports go with each?
 rubric:

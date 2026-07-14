@@ -5,12 +5,6 @@ tags:
 - infinity
 - learn
 - rest-api
-setup_datasources:
-- uid: infinity
-  name: Infinity
-  type: yesoreyeram-infinity-datasource
-  access: proxy
-  jsonData: {}
 statement: |
   What can the Infinity data source connect to, and what do I configure?
 rubric:

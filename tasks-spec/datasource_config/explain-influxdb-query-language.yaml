@@ -5,17 +5,6 @@ tags:
   - influxdb
   - learn
   - query-language
-setup_datasources:
-  - uid: influxdb
-    name: InfluxDB
-    type: influxdb
-    access: proxy
-    url: http://influxdb.metrics.svc:8181
-    jsonData:
-      version: SQL
-      dbName: testdb
-    secureJsonData:
-      token: seed-token
 statement: |
   InfluxDB asks me to pick a query language - InfluxQL, Flux, or SQL. How do I choose?
 rubric:
