@@ -1,35 +1,29 @@
 id: explain-influxdb-query-language
 category: datasource_config
 tags:
-- datasource
-- influxdb
-- learn
-- query-language
+  - datasource
+  - influxdb
+  - learn
+  - query-language
 setup_datasources:
-- uid: influxdb
-  name: InfluxDB
-  type: influxdb
-  access: proxy
-  url: http://influxdb.metrics.svc:8181
-  jsonData:
-    version: SQL
-    dbName: testdb
-  secureJsonData:
-    token: seed-token
+  - uid: influxdb
+    name: InfluxDB
+    type: influxdb
+    access: proxy
+    url: http://influxdb.metrics.svc:8181
+    jsonData:
+      version: SQL
+      dbName: testdb
+    secureJsonData:
+      token: seed-token
 statement: |
   InfluxDB asks me to pick a query language - InfluxQL, Flux, or SQL. How do I choose?
 rubric:
-- criterion: The response explains the InfluxDB query language choice (the requested outcome)
-  weight: 25
-- criterion: Maps each query language to a version - InfluxQL for 1.x, Flux for 2.x, SQL for 3.x
-  weight: 25
-- criterion: Notes the auth/config differences (1.x uses database plus user/password; 2.x uses org, bucket, and token; 3.x uses database and token)
-  weight: 20
-- criterion: Recommends matching the query language to the running InfluxDB version
-  weight: 15
-- criterion: References that the example source is configured for SQL on InfluxDB 3.x
-  weight: 15
-  fact:
-    kind: resource
-    resource: datasource_detail
-    name: InfluxDB
+  - criterion: The response explains the InfluxDB query language choice (the requested outcome)
+    weight: 25
+  - criterion: Maps each query language to a version - InfluxQL for 1.x, Flux for 2.x, SQL for 3.x
+    weight: 30
+  - criterion: Notes that auth/config differs by version, such as 2.x using org/bucket/token versus 3.x using database and token
+    weight: 25
+  - criterion: Recommends matching the query language to the running InfluxDB version
+    weight: 20

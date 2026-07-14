@@ -16,15 +16,11 @@ statement: |
 rubric:
 - criterion: The response explains Infinity data source configuration (the requested outcome)
   weight: 25
-  fact:
-    kind: resource
-    resource: datasource_detail
-    name: Infinity
-- criterion: Describes Infinity as a source for JSON, CSV, XML, GraphQL, and HTML data fetched over HTTP/REST
+- criterion: Describes Infinity as a source for structured data (such as JSON, CSV, XML, GraphQL, or HTML) fetched over HTTP/REST
   weight: 25
 - criterion: Explains that the allowed hosts list restricts which URLs the data source can query
   weight: 20
-- criterion: Covers authentication options (none, basic, bearer token, API key, OAuth2, or AWS SigV4)
+- criterion: Covers at least one authentication option, such as none, basic, bearer token, API key, OAuth2, or AWS SigV4
   weight: 15
-- criterion: Mentions choosing the parser/format and the URL or inline source type per query
+- criterion: Mentions per-query settings such as choosing the parser/format or the URL/inline source type
   weight: 15

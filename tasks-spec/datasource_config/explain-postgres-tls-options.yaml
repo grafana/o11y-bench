@@ -21,15 +21,9 @@ statement: |
 rubric:
 - criterion: The response explains the PostgreSQL TLS/SSL mode options (the requested outcome)
   weight: 25
-- criterion: Lists the sslmode options (disable, require, verify-ca, verify-full) and what each one does
-  weight: 25
+- criterion: Lists the main sslmode options (such as disable, require, verify-ca, verify-full) and broadly what they control
+  weight: 30
 - criterion: Recommends verify-full for production because it validates the server certificate and hostname
-  weight: 20
+  weight: 25
 - criterion: Notes that verify-ca and verify-full require supplying the CA certificate
-  weight: 15
-- criterion: References that the example source currently uses sslmode 'disable', which provides no encryption
-  weight: 15
-  fact:
-    kind: resource
-    resource: datasource_detail
-    name: PostgreSQL
+  weight: 20
