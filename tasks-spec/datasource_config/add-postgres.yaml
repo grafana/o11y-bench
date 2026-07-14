@@ -13,9 +13,9 @@ checks:
   params:
     mode: datasource_detail
     type: grafana-postgresql-datasource
-    require_url: true
+    url_contains: db.example.com
     database: analytics
-  name: A PostgreSQL datasource exists for the analytics database
+  name: A PostgreSQL datasource exists for the analytics database at db.example.com
 rubric:
 - criterion: The final response configures a new PostgreSQL data source (the requested outcome)
   weight: 20

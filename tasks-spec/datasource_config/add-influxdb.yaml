@@ -13,11 +13,11 @@ checks:
   params:
     mode: datasource_detail
     type: influxdb
-    require_url: true
+    url_contains: influxdb.metrics.svc
     json_data:
     - path: version
       equals: SQL
-  name: An InfluxDB datasource exists configured for SQL (InfluxDB 3.x)
+  name: An InfluxDB datasource exists at influxdb.metrics.svc configured for SQL (InfluxDB 3.x)
 rubric:
 - criterion: The final response configures a new InfluxDB data source (the requested outcome)
   weight: 20

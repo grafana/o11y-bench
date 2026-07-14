@@ -13,9 +13,9 @@ checks:
   params:
     mode: datasource_detail
     type: mysql
-    require_url: true
+    url_contains: mysql.prod.internal
     database: appdb
-  name: A MySQL datasource exists for the appdb database
+  name: A MySQL datasource exists for the appdb database at mysql.prod.internal
 rubric:
 - criterion: The final response configures a new MySQL data source (the requested outcome)
   weight: 20
