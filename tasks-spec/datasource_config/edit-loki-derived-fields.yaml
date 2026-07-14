@@ -18,8 +18,8 @@ checks:
     json_data:
     - path: derivedFields
       present: true
-    - path: derivedFields
-      contains: tempo
+    - path: derivedFields.name
+      contains: trace_id
   name: Loki datasource has a derived field linking trace_id to Tempo
 rubric:
 - criterion: The final response adds a derived field for trace correlation to the Loki data source (the requested outcome)
