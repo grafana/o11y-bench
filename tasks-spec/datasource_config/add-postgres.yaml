@@ -12,6 +12,7 @@ checks:
   type: state
   params:
     mode: datasource_detail
+    access: proxy
     type: grafana-postgresql-datasource
     url_contains: db.example.com
     database: analytics

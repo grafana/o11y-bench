@@ -12,6 +12,7 @@ checks:
   type: state
   params:
     mode: datasource_detail
+    access: proxy
     type: mysql
     url_contains: mysql.prod.internal
     database: appdb

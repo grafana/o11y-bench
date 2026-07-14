@@ -12,6 +12,7 @@ checks:
   type: state
   params:
     mode: datasource_detail
+    access: proxy
     type: influxdb
     url_contains: influxdb.metrics.svc
     json_data:

@@ -14,6 +14,7 @@ checks:
   type: state
   params:
     mode: datasource_detail
+    access: proxy
     type: grafana-bigquery-datasource
     json_data:
     - path: defaultProject

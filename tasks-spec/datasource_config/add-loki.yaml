@@ -11,6 +11,7 @@ checks:
   type: state
   params:
     mode: datasource_detail
+    access: proxy
     type: loki
     url_contains: loki.monitoring.svc:3100
     exclude_uids:

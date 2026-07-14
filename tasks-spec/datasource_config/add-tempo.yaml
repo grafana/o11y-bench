@@ -11,6 +11,7 @@ checks:
   type: state
   params:
     mode: datasource_detail
+    access: proxy
     type: tempo
     url_contains: tempo.monitoring.svc:3200
     exclude_uids:
