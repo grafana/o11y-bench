@@ -280,10 +280,14 @@ def test_state_datasource_detail_database() -> None:
         "type": "mysql",
         "url": "mysql.prod.internal:3306",
         "access": "proxy",
-        "database": "appdb",
+        "jsonData": {"database": "appdb"},
     }
     score, _ = _run_datasource_detail_check(
-        {"type": "mysql", "require_url": True, "database": "appdb"},
+        {
+            "type": "mysql",
+            "require_url": True,
+            "json_data": [{"path": "database", "equals": "appdb"}],
+        },
         detail,
     )
     assert score == 1.0

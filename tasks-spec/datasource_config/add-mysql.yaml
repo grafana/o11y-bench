@@ -14,8 +14,10 @@ checks:
     mode: datasource_detail
     access: proxy
     type: mysql
-    url_contains: mysql.prod.internal
-    database: appdb
+    url_contains: mysql.prod.internal:3306
+    json_data:
+      - path: database
+        equals: appdb
   name: A MySQL datasource exists for the appdb database at mysql.prod.internal
 rubric:
 - criterion: The final response configures a new MySQL data source (the requested outcome)
