@@ -278,16 +278,9 @@ class JsonDataExpectation(SpecModel):
 
     @model_validator(mode="after")
     def validate_expectation(self) -> Self:
-        if (
-            self.equals is not None
-            or self.any_of
-            or self.contains is not None
-            or self.present
-        ):
+        if self.equals is not None or self.any_of or self.contains is not None or self.present:
             return self
-        raise ValueError(
-            "jsonData expectations require equals, any_of, contains, or present."
-        )
+        raise ValueError("jsonData expectations require equals, any_of, contains, or present.")
 
 
 class DatasourceDetailStateParams(DatasourceSelector):

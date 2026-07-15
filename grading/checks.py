@@ -182,8 +182,7 @@ def evaluate_json_data_expectation(
     if expectation.equals is not None:
         if normalized != expectation.equals:
             return (
-                f"jsonData path {expectation.path!r} is {value!r}, "
-                f"expected {expectation.equals!r}."
+                f"jsonData path {expectation.path!r} is {value!r}, expected {expectation.equals!r}."
             )
     if expectation.any_of:
         if normalized not in expectation.any_of:
@@ -194,10 +193,7 @@ def evaluate_json_data_expectation(
     if expectation.contains is not None:
         rendered = json.dumps(value) if not isinstance(value, str) else value
         if expectation.contains not in rendered:
-            return (
-                f"jsonData path {expectation.path!r} does not contain "
-                f"{expectation.contains!r}."
-            )
+            return f"jsonData path {expectation.path!r} does not contain {expectation.contains!r}."
     return None
 
 
@@ -270,7 +266,10 @@ def validate_datasource_detail(
     if params.require_access and not str(datasource.get("access", "")).strip():
         return 0.0, "Datasource does not have an access mode configured."
     if params.access and str(datasource.get("access", "")).lower() != params.access.lower():
-        return 0.0, f"Datasource access is {datasource.get('access')!r}, expected {params.access!r}."
+        return (
+            0.0,
+            f"Datasource access is {datasource.get('access')!r}, expected {params.access!r}.",
+        )
 
     # Read the per-uid detail for database/jsonData: the list endpoint omits jsonData on some
     # Grafana versions. Falls back to the list record if the detail lookup fails.
@@ -281,7 +280,10 @@ def validate_datasource_detail(
     detail, _ = fetch_grafana_datasource_full(ctx.grafana_url, datasource, ctx.timeout_sec)
 
     if params.database and str(detail.get("database", "")) != params.database:
-        return 0.0, f"Datasource database is {detail.get('database')!r}, expected {params.database!r}."
+        return (
+            0.0,
+            f"Datasource database is {detail.get('database')!r}, expected {params.database!r}.",
+        )
 
     if params.json_data:
         json_data = detail.get("jsonData")
