@@ -277,22 +277,25 @@ def validate_datasource_detail(
     # field the MCP write tools may exclude (and Grafana may omit on read), so it is graded by
     # rubric instead of a deterministic check.
     assert ctx is not None
-    detail, _ = fetch_grafana_datasource_full(ctx.grafana_url, datasource, ctx.timeout_sec)
+    detail, detail_err = fetch_grafana_datasource_full(ctx.grafana_url, datasource, ctx.timeout_sec)
 
     if params.database and str(detail.get("database", "")) != params.database:
         return (
             0.0,
-            f"Datasource database is {detail.get('database')!r}, expected {params.database!r}.",
+            f"Datasource database is {detail.get('database')!r}, expected {params.database!r}. {detail_err}".strip(),
         )
 
     if params.json_data:
         json_data = detail.get("jsonData")
         if not isinstance(json_data, dict):
-            return 0.0, "Datasource has no jsonData to evaluate."
+            return 0.0, f"Datasource has no jsonData to evaluate. {detail_err}".strip()
         for expectation in params.json_data:
             failure = evaluate_json_data_expectation(json_data, expectation)
             if failure:
-                return 0.0, failure
+                return (
+                    0.0,
+                    f"Datasource jsonData evaluation failed: {failure}. {detail_err}".strip(),
+                )
 
     return 1.0, "Datasource detail exists and matches the expected state."
 

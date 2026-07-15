@@ -163,7 +163,9 @@ def test_state_datasource_detail_requires_configured_detail() -> None:
     assert "matches the expected state" in explanations["datasource detail"]
 
 
-def _run_datasource_detail_check(params: dict, detail: dict) -> tuple[float, str]:
+def _run_datasource_detail_check(
+    params: dict, detail: dict, detail_err: str = ""
+) -> tuple[float, str]:
     listing = [
         {
             "name": detail["name"],
@@ -178,7 +180,10 @@ def _run_datasource_detail_check(params: dict, detail: dict) -> tuple[float, str
             "grading.checks.fetch_grafana_datasources_checked",
             return_value=(listing, None),
         ),
-        patch("grading.checks.fetch_grafana_datasource_full", return_value=(detail, "")),
+        patch(
+            "grading.checks.fetch_grafana_datasource_full",
+            return_value=(detail, detail_err),
+        ),
     ):
         scores, explanations = run_checks(
             [
@@ -282,6 +287,60 @@ def test_state_datasource_detail_database() -> None:
         detail,
     )
     assert score == 1.0
+
+
+def test_state_datasource_detail_surfaces_detail_fetch_error_on_failure() -> None:
+    # Detail fetch failed, so the fallback list record lacks jsonData: the failure
+    # message must append the fetch error instead of only "no jsonData to evaluate".
+    fallback = {"name": "ClickHouse", "type": "grafana-clickhouse-datasource"}
+    detail_err = "Grafana datasource detail HTTP 403 for uid=ds."
+    score, explanation = _run_datasource_detail_check(
+        {"name": "ClickHouse", "json_data": [{"path": "protocol", "equals": "http"}]},
+        fallback,
+        detail_err=detail_err,
+    )
+    assert score == 0.0
+    assert "no jsonData to evaluate" in explanation
+    assert detail_err in explanation
+
+
+def test_state_datasource_detail_surfaces_detail_fetch_error_on_json_mismatch() -> None:
+    # jsonData is present but an expectation fails: the fetch error is still appended.
+    fallback = {
+        "name": "ClickHouse",
+        "type": "grafana-clickhouse-datasource",
+        "jsonData": {"protocol": "native"},
+    }
+    detail_err = "Grafana datasource detail request failed: timed out"
+    score, explanation = _run_datasource_detail_check(
+        {"name": "ClickHouse", "json_data": [{"path": "protocol", "equals": "http"}]},
+        fallback,
+        detail_err=detail_err,
+    )
+    assert score == 0.0
+    assert "jsonData evaluation failed" in explanation
+    assert "protocol" in explanation
+    assert detail_err in explanation
+
+
+def test_state_datasource_detail_passes_from_fallback_record_despite_fetch_error() -> None:
+    # If the fallback list record still has the needed data, a detail-fetch error must
+    # not turn a genuinely-correct datasource into a failure (no false negatives), and the
+    # error must not leak into the success message.
+    fallback = {
+        "name": "MySQL",
+        "type": "mysql",
+        "url": "mysql.prod.internal:3306",
+        "access": "proxy",
+        "database": "appdb",
+    }
+    score, explanation = _run_datasource_detail_check(
+        {"type": "mysql", "require_url": True, "database": "appdb"},
+        fallback,
+        detail_err="Grafana datasource detail request failed: timed out",
+    )
+    assert score == 1.0
+    assert "timed out" not in explanation
 
 
 def _run_datasource_detail_check_multi(
