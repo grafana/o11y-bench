@@ -18,7 +18,7 @@ checks:
     json_data:
     - path: derivedFields
       present: true
-    - path: derivedFields.name
+    - path: derivedFields
       contains: trace_id
   name: Loki datasource has a derived field linking trace_id to Tempo
 rubric:

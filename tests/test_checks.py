@@ -1,9 +1,14 @@
+from pathlib import Path
 from unittest.mock import patch
+
+import yaml
 
 from grading import env_context
 from grading.checks import run_checks
 from grading.env_context import VerifierContext
 from grading.models import CheckItem, Message, ToolCall, ToolResult, Transcript
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _tool_grounded_trace_response() -> Transcript:
@@ -271,6 +276,24 @@ def test_state_datasource_detail_contains_searches_serialized_list() -> None:
         },
         detail,
     )
+    assert score == 1.0
+
+
+def test_edit_loki_derived_fields_spec_matches_conventional_field() -> None:
+    detail = {
+        "name": "Loki",
+        "type": "loki",
+        "jsonData": {
+            "derivedFields": [
+                {"name": "TraceID", "matcherRegex": "trace_id=(\\w+)", "datasourceUid": "tempo"}
+            ]
+        },
+    }
+    spec = yaml.safe_load(
+        (ROOT / "tasks-spec/datasource_config/edit-loki-derived-fields.yaml").read_text()
+    )
+    state_check = next(c for c in spec["checks"] if c["type"] == "state")
+    score, _ = _run_datasource_detail_check(state_check["params"], detail)
     assert score == 1.0
 
 
