@@ -15,6 +15,9 @@ checks:
     name: Tempo
     type: tempo
     json_data:
+    # Load-bearing: docker/datasources.yaml deliberately omits tracesToLogsV2 from the
+    # Tempo seed, so `present: true` proves the agent added it. Re-seeding that field
+    # would make this check pass with no agent action.
     - path: tracesToLogsV2
       present: true
     - path: tracesToLogsV2.datasourceUid
