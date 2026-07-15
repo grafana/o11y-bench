@@ -39,6 +39,10 @@ APPROXIMATE_CRITERION_RE = re.compile(
     r"\b(roughly|approx(?:imate|imately)?|about)\b", re.IGNORECASE
 )
 
+# Cap the rendered jsonData preview so large plugin datasource configs
+# (derived fields, custom headers, etc.) don't bloat grading prompts/reports.
+JSON_DATA_PREVIEW_CHARS = 500
+
 
 def resolve_fact(
     fact: FactSpec,
@@ -246,7 +250,9 @@ def resolve_datasource_detail_fact(
             summary=f"Grafana did not return a datasource matching {ident}.",
             debug={"resource": fact.resource, "selector": {"name": fact.name, "type": fact.type}},
         )
-    full, _ = fetch_grafana_datasource_full(ctx.grafana_url, datasource, ctx.timeout_sec)
+    full, detail_err = fetch_grafana_datasource_full(
+        ctx.grafana_url, datasource, ctx.timeout_sec
+    )
     json_data_raw = full.get("jsonData")
     json_data = json_data_raw if isinstance(json_data_raw, dict) else {}
     detail = {
@@ -261,6 +267,8 @@ def resolve_datasource_detail_fact(
         "resource": fact.resource,
         "item": detail,
     }
+    if detail_err:
+        debug["detail_err"] = detail_err
     return FactResult(summary=render_datasource_detail_summary(detail), debug=debug)
 
 
@@ -428,7 +436,10 @@ def render_datasource_detail_summary(item: dict[str, Any]) -> str:
         parts.append(f"Database: {database}.")
     json_data = item.get("jsonData")
     if isinstance(json_data, dict) and json_data:
-        parts.append(f"jsonData: {json.dumps(json_data, sort_keys=True)}.")
+        rendered = json.dumps(json_data, sort_keys=True)
+        if len(rendered) > JSON_DATA_PREVIEW_CHARS:
+            rendered = rendered[:JSON_DATA_PREVIEW_CHARS] + "..."
+        parts.append(f"jsonData: {rendered}.")
     return " ".join(parts)
 
 
