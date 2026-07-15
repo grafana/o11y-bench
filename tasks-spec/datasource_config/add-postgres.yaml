@@ -14,8 +14,10 @@ checks:
     mode: datasource_detail
     access: proxy
     type: grafana-postgresql-datasource
-    url_contains: db.example.com
-    database: analytics
+    url_contains: db.example.com:5432
+    json_data:
+      - path: database
+        equals: analytics
   name: A PostgreSQL datasource exists for the analytics database at db.example.com
 rubric:
 - criterion: The final response configures a new PostgreSQL data source (the requested outcome)
