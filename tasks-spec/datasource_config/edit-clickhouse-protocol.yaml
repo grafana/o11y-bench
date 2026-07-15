@@ -30,10 +30,10 @@ checks:
     - path: protocol
       equals: http
     - path: port
-      any_of:
-      - "8123"
-      - "8443"
-  name: ClickHouse datasource now uses the HTTP protocol on the matching port
+      equals: "8443"
+    - path: secure
+      equals: "true"
+  name: ClickHouse datasource now uses the HTTP protocol on the TLS port 8443 with secure preserved
 rubric:
 - criterion: The final response switches the ClickHouse data source to the HTTP protocol (the requested outcome)
   weight: 20
