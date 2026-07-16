@@ -76,8 +76,13 @@ class DatasourceDetailFact(DatasourceSelector):
     resource: Literal["datasource_detail"]
 
 
+class DatasourceHealthFact(DatasourceSelector):
+    kind: Literal["resource"]
+    resource: Literal["datasource_health"]
+
+
 type ResourceFact = Annotated[
-    DashboardFact | DatasourceInventoryFact | DatasourceDetailFact,
+    DashboardFact | DatasourceInventoryFact | DatasourceDetailFact | DatasourceHealthFact,
     Field(discriminator="resource"),
 ]
 type FactSpec = Annotated[QueryFact | ResourceFact, Field(discriminator="kind")]

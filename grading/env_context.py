@@ -640,6 +640,39 @@ def fetch_grafana_datasource_full(
     return payload, ""
 
 
+def fetch_grafana_datasource_health(
+    base_url: str, uid: str, timeout_sec: float
+) -> tuple[dict[str, Any], str]:
+    """Return the datasource health payload from Grafana's health endpoint.
+
+    Grafana returns HTTP 200 with ``{"status": "OK", ...}`` for a healthy datasource and
+    HTTP 400 with ``{"status": "ERROR", "message": ...}`` when the backend is unreachable
+    or misconfigured. Both carry the status we want, so the 400 body is parsed rather than
+    treated as a transport failure.
+    """
+    if not base_url:
+        return {}, "GRAFANA_URL is not set."
+    uid = str(uid).strip()
+    if not uid:
+        return {}, "Datasource has no uid for a health lookup."
+    url = f"{base_url}/api/datasources/uid/{uid}/health"
+    try:
+        payload = http_get_json(url, timeout_sec)
+    except urllib.error.HTTPError as exc:
+        try:
+            body = json.loads(exc.read().decode())
+        except ValueError, OSError:
+            body = None
+        if isinstance(body, dict) and body.get("status"):
+            return body, ""
+        return {}, f"Grafana datasource health HTTP {exc.code} for uid={uid}."
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        return {}, f"Grafana datasource health request failed: {exc}"
+    if not isinstance(payload, dict):
+        return {}, "Grafana datasource health is not an object."
+    return payload, ""
+
+
 def fetch_grafana_dashboard_model(
     base_url: str, uid: str, timeout_sec: float
 ) -> tuple[dict[str, Any] | None, str]:

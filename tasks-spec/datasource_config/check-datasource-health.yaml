@@ -1,0 +1,36 @@
+id: check-datasource-health
+category: datasource_config
+tags:
+- datasource
+- health
+- verify
+statement: |
+  Before we cut over to the new stack, can you confirm our Prometheus, Loki, and Tempo data
+  sources are actually reachable and passing their health checks?
+rubric:
+- criterion: The final response reports whether the data sources are healthy (the requested outcome)
+  weight: 20
+  fact:
+    kind: resource
+    resource: datasource_health
+    name: Prometheus
+- criterion: Runs an actual health check against the data sources (e.g. the datasource health tool) rather than only inspecting their configuration
+  weight: 20
+- criterion: Reports the health status of the Prometheus data source
+  weight: 20
+  fact:
+    kind: resource
+    resource: datasource_health
+    name: Prometheus
+- criterion: Reports the health status of the Loki data source
+  weight: 20
+  fact:
+    kind: resource
+    resource: datasource_health
+    name: Loki
+- criterion: Reports the health status of the Tempo data source
+  weight: 20
+  fact:
+    kind: resource
+    resource: datasource_health
+    name: Tempo

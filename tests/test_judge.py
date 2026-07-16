@@ -286,3 +286,57 @@ def test_resolve_datasource_detail_fact_prefers_name_when_name_and_type_are_both
     prompt_text = criteria[0].prompt_text
     assert "Grafana datasource Prometheus is type prometheus." in prompt_text
     assert "URL: http://prom:9090." in prompt_text
+
+
+def test_resolve_datasource_health_fact_reports_unhealthy_status_and_message() -> None:
+    fact = {
+        "kind": "resource",
+        "resource": "datasource_health",
+        "name": "Prometheus Staging",
+    }
+    problem = Problem(
+        id="diagnose-unhealthy-datasource",
+        category="datasource_config",
+        statement="x",
+        rubric=[
+            {
+                "criterion": "The final response identifies the failing datasource.",
+                "weight": 1.0,
+                "fact": fact,
+            }
+        ],
+    )
+
+    with (
+        patch(
+            "grading.facts.fetch_grafana_datasources_checked",
+            return_value=(
+                [
+                    {"name": "Prometheus", "type": "prometheus", "uid": "prometheus"},
+                    {
+                        "name": "Prometheus Staging",
+                        "type": "prometheus",
+                        "uid": "prometheus-staging",
+                    },
+                ],
+                None,
+            ),
+        ),
+        patch(
+            "grading.facts.fetch_grafana_datasource_health",
+            return_value=(
+                {
+                    "status": "ERROR",
+                    "message": "dial tcp: lookup prometheus-staging.invalid: no such host",
+                },
+                "",
+            ),
+        ) as health,
+    ):
+        criteria = build_judge_criteria(problem, VerifierContext(grafana_url="http://grafana"))
+
+    # Resolves the named (unhealthy) datasource by uid, not the healthy base Prometheus.
+    assert health.call_args.args[1] == "prometheus-staging"
+    prompt_text = criteria[0].prompt_text
+    assert "health check reports ERROR (unhealthy)" in prompt_text
+    assert "no such host" in prompt_text

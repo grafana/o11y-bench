@@ -1,0 +1,44 @@
+id: diagnose-unhealthy-datasource
+category: datasource_config
+tags:
+- datasource
+- health
+- diagnose
+setup_datasources:
+# Seeded unhealthy on purpose: the .invalid host never resolves, so Grafana's health
+# check for this datasource reliably returns ERROR while the base Prometheus stays OK.
+- uid: prometheus-staging
+  name: Prometheus Staging
+  type: prometheus
+  access: proxy
+  url: http://prometheus-staging.invalid:9090
+statement: |
+  Panels backed by one of our Prometheus data sources are showing "No data". Check our data
+  sources' health, tell us which one is failing, and explain the likely cause.
+rubric:
+- criterion: The final response identifies the failing data source and its likely cause (the requested outcome)
+  weight: 25
+  fact:
+    kind: resource
+    resource: datasource_health
+    name: Prometheus Staging
+- criterion: Runs a health check against the data sources rather than guessing from configuration alone
+  weight: 20
+- criterion: Identifies that the "Prometheus Staging" data source is the unhealthy one
+  weight: 20
+  fact:
+    kind: resource
+    resource: datasource_health
+    name: Prometheus Staging
+- criterion: Attributes the failure to an unreachable or misconfigured URL (for example the host cannot be resolved) rather than a data problem
+  weight: 20
+  fact:
+    kind: resource
+    resource: datasource_detail
+    name: Prometheus Staging
+- criterion: Confirms the primary Prometheus data source is healthy so the issue is scoped to the failing source
+  weight: 15
+  fact:
+    kind: resource
+    resource: datasource_health
+    name: Prometheus
