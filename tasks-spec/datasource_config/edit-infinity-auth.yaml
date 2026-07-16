@@ -28,7 +28,7 @@ checks:
       mode: datasource_detail
       name: Internal API
       type: yesoreyeram-infinity-datasource
-      basicAuth: false
+      basic_auth: false
       json_data:
         - path: auth_method
           equals: bearerToken

@@ -285,6 +285,14 @@ def validate_datasource_detail(
             f"Datasource database is {detail.get('database')!r}, expected {params.database!r}. {detail_err}".strip(),
         )
 
+    if params.basic_auth is not None:
+        actual_basic_auth = bool(detail.get("basicAuth", False))
+        if actual_basic_auth != params.basic_auth:
+            return (
+                0.0,
+                f"Datasource basicAuth is {actual_basic_auth!r}, expected {params.basic_auth!r}. {detail_err}".strip(),
+            )
+
     if params.json_data:
         json_data = detail.get("jsonData")
         if not isinstance(json_data, dict):
