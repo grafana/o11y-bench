@@ -1,0 +1,22 @@
+id: provision-datasource-terraform
+category: datasource_config
+tags:
+- datasource
+- provisioning
+- as-code
+- terraform
+statement: |
+  We manage our infrastructure with Terraform and want our Grafana datasource version-controlled
+  too. Generate a Terraform configuration using the Grafana provider that manages a default
+  Prometheus datasource at http://prometheus:9090 using proxy access.
+rubric:
+- criterion: The final response provides a Terraform configuration for the datasource (the requested outcome)
+  weight: 20
+- criterion: Declares the Grafana provider and a grafana_data_source resource
+  weight: 20
+- criterion: Sets the resource type to prometheus and the url to http://prometheus:9090
+  weight: 20
+- criterion: Configures proxy access and marks the datasource as the default (for example is_default = true)
+  weight: 20
+- criterion: Notes how the provider is configured or authenticated (for example the Grafana URL and an auth token or API key) or the apply workflow
+  weight: 20
