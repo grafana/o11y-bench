@@ -12,11 +12,18 @@ checks:
   type: state
   params:
     mode: datasource_detail
+    access: proxy
     type: grafana-clickhouse-datasource
     json_data:
+    - path: host
+      equals: clickhouse.analytics.internal
     - path: protocol
       equals: native
-  name: A ClickHouse datasource exists configured for the native protocol
+    - path: port
+      equals: "9000"
+    - path: secure
+      equals: "true"
+  name: A ClickHouse datasource exists at clickhouse.analytics.internal using the native protocol on port 9000 with TLS
 rubric:
 - criterion: The final response configures a new ClickHouse data source (the requested outcome)
   weight: 20

@@ -14,6 +14,7 @@ from grading.env_context import (
     VerifierContext,
     default_tempo_search_window_sec,
     fetch_grafana_datasource_full,
+    fetch_grafana_datasource_health,
     fetch_grafana_datasources_checked,
     fetch_loki_query_result,
     fetch_prometheus_query_result,
@@ -23,6 +24,7 @@ from grading.env_context import (
 from grading.models import (
     DashboardFact,
     DatasourceDetailFact,
+    DatasourceHealthFact,
     DatasourceInventoryFact,
     FactSpec,
     QueryFact,
@@ -38,6 +40,10 @@ class FactResult:
 APPROXIMATE_CRITERION_RE = re.compile(
     r"\b(roughly|approx(?:imate|imately)?|about)\b", re.IGNORECASE
 )
+
+# Cap the rendered jsonData preview so large plugin datasource configs
+# (derived fields, custom headers, etc.) don't bloat grading prompts/reports.
+JSON_DATA_PREVIEW_CHARS = 500
 
 
 def resolve_fact(
@@ -58,6 +64,8 @@ def resolve_fact(
             result = resolve_datasource_inventory_fact(ctx)
         case DatasourceDetailFact():
             result = resolve_datasource_detail_fact(fact, ctx)
+        case DatasourceHealthFact():
+            result = resolve_datasource_health_fact(fact, ctx)
 
     if cache is not None:
         cache[cache_key] = result
@@ -246,7 +254,7 @@ def resolve_datasource_detail_fact(
             summary=f"Grafana did not return a datasource matching {ident}.",
             debug={"resource": fact.resource, "selector": {"name": fact.name, "type": fact.type}},
         )
-    full, _ = fetch_grafana_datasource_full(ctx.grafana_url, datasource, ctx.timeout_sec)
+    full, detail_err = fetch_grafana_datasource_full(ctx.grafana_url, datasource, ctx.timeout_sec)
     json_data_raw = full.get("jsonData")
     json_data = json_data_raw if isinstance(json_data_raw, dict) else {}
     detail = {
@@ -261,7 +269,55 @@ def resolve_datasource_detail_fact(
         "resource": fact.resource,
         "item": detail,
     }
+    if detail_err:
+        debug["detail_err"] = detail_err
     return FactResult(summary=render_datasource_detail_summary(detail), debug=debug)
+
+
+def resolve_datasource_health_fact(
+    fact: DatasourceHealthFact,
+    ctx: VerifierContext,
+) -> FactResult:
+    datasources, err = fetch_grafana_datasources_checked(ctx)
+    if err:
+        return FactResult(
+            summary=f"Could not load Grafana datasource health: {err}.",
+            debug={"resource": fact.resource, "error": err},
+        )
+    assert datasources is not None
+
+    datasource, err = resolve_grafana_datasource(
+        datasources,
+        name=fact.name,
+        datasource_type=fact.type,
+    )
+    if err or datasource is None:
+        ident = fact.name or fact.type or "unknown selector"
+        return FactResult(
+            summary=f"Grafana did not return a datasource matching {ident}.",
+            debug={"resource": fact.resource, "selector": {"name": fact.name, "type": fact.type}},
+        )
+
+    assert ctx is not None
+    health, health_err = fetch_grafana_datasource_health(
+        ctx.grafana_url, str(datasource.get("uid", "")), ctx.timeout_sec
+    )
+    name = str(datasource.get("name", "")).strip() or "unnamed"
+    kind = str(datasource.get("type", "")).strip() or "unknown"
+    if health_err:
+        return FactResult(
+            summary=f"Could not determine health of datasource {name}: {health_err}.",
+            debug={
+                "resource": fact.resource,
+                "item": {"name": name, "type": kind},
+                "error": health_err,
+            },
+        )
+    status = str(health.get("status", "")).strip() or "UNKNOWN"
+    message = str(health.get("message", "")).strip()
+    item = {"name": name, "type": kind, "status": status, "message": message}
+    debug = {"resource": fact.resource, "item": item}
+    return FactResult(summary=render_datasource_health_summary(item), debug=debug)
 
 
 def render_query_result_summary(query: str, result: dict[str, Any]) -> str:
@@ -428,8 +484,23 @@ def render_datasource_detail_summary(item: dict[str, Any]) -> str:
         parts.append(f"Database: {database}.")
     json_data = item.get("jsonData")
     if isinstance(json_data, dict) and json_data:
-        parts.append(f"jsonData: {json.dumps(json_data, sort_keys=True)}.")
+        rendered = json.dumps(json_data, sort_keys=True)
+        if len(rendered) > JSON_DATA_PREVIEW_CHARS:
+            rendered = rendered[:JSON_DATA_PREVIEW_CHARS] + "..."
+        parts.append(f"jsonData: {rendered}.")
     return " ".join(parts)
+
+
+def render_datasource_health_summary(item: dict[str, Any]) -> str:
+    name = str(item.get("name", "")).strip() or "unnamed"
+    kind = str(item.get("type", "")).strip() or "unknown"
+    status = str(item.get("status", "")).strip() or "UNKNOWN"
+    message = str(item.get("message", "")).strip()
+    healthy = "healthy" if status.upper() == "OK" else "unhealthy"
+    summary = f"Grafana datasource {name} (type {kind}) health check reports {status} ({healthy})."
+    if message:
+        summary += f" Message: {message}."
+    return summary
 
 
 def render_labeled_item(item: dict[str, Any]) -> str:

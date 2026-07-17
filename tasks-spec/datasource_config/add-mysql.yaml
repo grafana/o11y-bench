@@ -12,10 +12,13 @@ checks:
   type: state
   params:
     mode: datasource_detail
+    access: proxy
     type: mysql
-    require_url: true
-    database: appdb
-  name: A MySQL datasource exists for the appdb database
+    url_contains: mysql.prod.internal:3306
+    json_data:
+      - path: database
+        equals: appdb
+  name: A MySQL datasource exists for the appdb database at mysql.prod.internal
 rubric:
 - criterion: The final response configures a new MySQL data source (the requested outcome)
   weight: 20
@@ -24,7 +27,7 @@ rubric:
     resource: datasource_detail
     type: mysql
 - criterion: Selects the MySQL data source type and captures host mysql.prod.internal:3306, database appdb, and user grafana
-  weight: 15
+  weight: 20
 - criterion: Addresses TLS/SSL configuration for the connection
   weight: 10
 - criterion: Mentions connection-pool settings (max open and idle connections) as optional tuning

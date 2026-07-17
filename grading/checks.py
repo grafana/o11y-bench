@@ -182,8 +182,7 @@ def evaluate_json_data_expectation(
     if expectation.equals is not None:
         if normalized != expectation.equals:
             return (
-                f"jsonData path {expectation.path!r} is {value!r}, "
-                f"expected {expectation.equals!r}."
+                f"jsonData path {expectation.path!r} is {value!r}, expected {expectation.equals!r}."
             )
     if expectation.any_of:
         if normalized not in expectation.any_of:
@@ -194,11 +193,43 @@ def evaluate_json_data_expectation(
     if expectation.contains is not None:
         rendered = json.dumps(value) if not isinstance(value, str) else value
         if expectation.contains not in rendered:
-            return (
-                f"jsonData path {expectation.path!r} does not contain "
-                f"{expectation.contains!r}."
-            )
+            return f"jsonData path {expectation.path!r} does not contain {expectation.contains!r}."
     return None
+
+
+def match_datasource_by_url(
+    datasources: list[dict[str, Any]],
+    url_contains: str,
+    *,
+    name: str | None,
+    datasource_type: str | None,
+    exclude_uids: list[str] | None = None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Find a datasource whose URL contains ``url_contains``, scoped by name/type.
+
+    Unlike ``resolve_grafana_datasource`` (which returns the first match by type),
+    this scans all datasources so a newly added source at the requested URL is not
+    shadowed by a same-type seed pointing elsewhere.
+
+    ``exclude_uids`` drops pre-seeded datasources (e.g. the base-stack ``loki`` uid) so
+    the match proves the agent *added* a source rather than merely confirming a seed that
+    happens to sit at the requested URL.
+    """
+    want = url_contains.strip().lower()
+    type_want = datasource_type.strip().lower() if datasource_type else None
+    excluded = set(exclude_uids or [])
+    for item in datasources:
+        if str(item.get("uid", "")) in excluded:
+            continue
+        if name and str(item.get("name", "")) != name:
+            continue
+        if type_want and str(item.get("type", "")).strip().lower() != type_want:
+            continue
+        if want in str(item.get("url", "")).strip().lower():
+            return item, None
+    selector = datasource_type or name or "datasource"
+    suffix = f" (excluding uids {sorted(excluded)})" if excluded else ""
+    return None, f"No {selector} datasource has a URL containing {url_contains!r}{suffix}."
 
 
 def validate_datasource_detail(
@@ -210,11 +241,20 @@ def validate_datasource_detail(
         return 0.0, err
     assert datasources is not None
 
-    datasource, err = resolve_grafana_datasource(
-        datasources,
-        name=params.name,
-        datasource_type=params.type,
-    )
+    if params.url_contains:
+        datasource, err = match_datasource_by_url(
+            datasources,
+            params.url_contains,
+            name=params.name,
+            datasource_type=params.type,
+            exclude_uids=params.exclude_uids,
+        )
+    else:
+        datasource, err = resolve_grafana_datasource(
+            datasources,
+            name=params.name,
+            datasource_type=params.type,
+        )
     if err:
         return 0.0, err
     assert datasource is not None
@@ -226,7 +266,10 @@ def validate_datasource_detail(
     if params.require_access and not str(datasource.get("access", "")).strip():
         return 0.0, "Datasource does not have an access mode configured."
     if params.access and str(datasource.get("access", "")).lower() != params.access.lower():
-        return 0.0, f"Datasource access is {datasource.get('access')!r}, expected {params.access!r}."
+        return (
+            0.0,
+            f"Datasource access is {datasource.get('access')!r}, expected {params.access!r}.",
+        )
 
     # Read the per-uid detail for database/jsonData: the list endpoint omits jsonData on some
     # Grafana versions. Falls back to the list record if the detail lookup fails.
@@ -234,19 +277,33 @@ def validate_datasource_detail(
     # field the MCP write tools may exclude (and Grafana may omit on read), so it is graded by
     # rubric instead of a deterministic check.
     assert ctx is not None
-    detail, _ = fetch_grafana_datasource_full(ctx.grafana_url, datasource, ctx.timeout_sec)
+    detail, detail_err = fetch_grafana_datasource_full(ctx.grafana_url, datasource, ctx.timeout_sec)
 
     if params.database and str(detail.get("database", "")) != params.database:
-        return 0.0, f"Datasource database is {detail.get('database')!r}, expected {params.database!r}."
+        return (
+            0.0,
+            f"Datasource database is {detail.get('database')!r}, expected {params.database!r}. {detail_err}".strip(),
+        )
+
+    if params.basic_auth is not None:
+        actual_basic_auth = bool(detail.get("basicAuth", False))
+        if actual_basic_auth != params.basic_auth:
+            return (
+                0.0,
+                f"Datasource basicAuth is {actual_basic_auth!r}, expected {params.basic_auth!r}. {detail_err}".strip(),
+            )
 
     if params.json_data:
         json_data = detail.get("jsonData")
         if not isinstance(json_data, dict):
-            return 0.0, "Datasource has no jsonData to evaluate."
+            return 0.0, f"Datasource has no jsonData to evaluate. {detail_err}".strip()
         for expectation in params.json_data:
             failure = evaluate_json_data_expectation(json_data, expectation)
             if failure:
-                return 0.0, failure
+                return (
+                    0.0,
+                    f"Datasource jsonData evaluation failed: {failure}. {detail_err}".strip(),
+                )
 
     return 1.0, "Datasource detail exists and matches the expected state."
 

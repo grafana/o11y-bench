@@ -12,10 +12,13 @@ checks:
   type: state
   params:
     mode: datasource_detail
+    access: proxy
     type: grafana-postgresql-datasource
-    require_url: true
-    database: analytics
-  name: A PostgreSQL datasource exists for the analytics database
+    url_contains: db.example.com:5432
+    json_data:
+      - path: database
+        equals: analytics
+  name: A PostgreSQL datasource exists for the analytics database at db.example.com
 rubric:
 - criterion: The final response configures a new PostgreSQL data source (the requested outcome)
   weight: 20
@@ -24,7 +27,7 @@ rubric:
     resource: datasource_detail
     type: grafana-postgresql-datasource
 - criterion: Selects the PostgreSQL data source type and captures host db.example.com:5432, database analytics, and user grafana_ro
-  weight: 15
+  weight: 20
 - criterion: Addresses TLS/SSL mode selection (disable, require, verify-ca, or verify-full)
   weight: 10
 - criterion: Mentions connection-pool or PostgreSQL-version settings as optional tuning

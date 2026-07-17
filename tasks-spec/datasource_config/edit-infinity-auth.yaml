@@ -1,0 +1,48 @@
+id: edit-infinity-auth
+category: datasource_config
+tags:
+  - datasource
+  - infinity
+  - edit
+  - authentication
+setup_datasources:
+  - uid: infinity
+    name: Internal API
+    type: yesoreyeram-infinity-datasource
+    access: proxy
+    basicAuth: true
+    basicAuthUser: svc-reporting
+    jsonData:
+      allowedHosts:
+        - https://api.internal.example.com
+      auth_method: basicAuth
+    secureJsonData:
+      basicAuthPassword: true
+statement: |
+  Our internal API at https://api.internal.example.com is dropping basic auth in favor of a
+  bearer token. Update our "Internal API" Infinity data source's authentication to match.
+checks:
+  - weight: 40
+    type: state
+    params:
+      mode: datasource_detail
+      name: Internal API
+      type: yesoreyeram-infinity-datasource
+      basic_auth: false
+      json_data:
+        - path: auth_method
+          equals: bearerToken
+    name: The Internal API datasource now uses the bearer-token auth method
+rubric:
+  - criterion: The final response updates the Infinity data source's authentication method (the requested outcome)
+    weight: 15
+    fact:
+      kind: resource
+      resource: datasource_detail
+      name: Internal API
+  - criterion: Identifies that the data source currently uses basic auth and switches it to the bearer token method
+    weight: 15
+  - criterion: Disables or clears the previous basic auth settings so the old credentials are no longer used
+    weight: 15
+  - criterion: Notes that the bearer token value must be entered in the Grafana UI because write-only secrets cannot be set through the configuration API
+    weight: 15

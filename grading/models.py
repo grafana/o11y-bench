@@ -76,8 +76,13 @@ class DatasourceDetailFact(DatasourceSelector):
     resource: Literal["datasource_detail"]
 
 
+class DatasourceHealthFact(DatasourceSelector):
+    kind: Literal["resource"]
+    resource: Literal["datasource_health"]
+
+
 type ResourceFact = Annotated[
-    DashboardFact | DatasourceInventoryFact | DatasourceDetailFact,
+    DashboardFact | DatasourceInventoryFact | DatasourceDetailFact | DatasourceHealthFact,
     Field(discriminator="resource"),
 ]
 type FactSpec = Annotated[QueryFact | ResourceFact, Field(discriminator="kind")]
@@ -278,16 +283,9 @@ class JsonDataExpectation(SpecModel):
 
     @model_validator(mode="after")
     def validate_expectation(self) -> Self:
-        if (
-            self.equals is not None
-            or self.any_of
-            or self.contains is not None
-            or self.present
-        ):
+        if self.equals is not None or self.any_of or self.contains is not None or self.present:
             return self
-        raise ValueError(
-            "jsonData expectations require equals, any_of, contains, or present."
-        )
+        raise ValueError("jsonData expectations require equals, any_of, contains, or present.")
 
 
 class DatasourceDetailStateParams(DatasourceSelector):
@@ -295,6 +293,9 @@ class DatasourceDetailStateParams(DatasourceSelector):
     require_url: bool = False
     require_access: bool = False
     access: str | None = None
+    basic_auth: bool | None = None
+    url_contains: str | None = None
+    exclude_uids: list[str] = Field(default_factory=list)
     database: str | None = None
     json_data: list[JsonDataExpectation] = Field(default_factory=list)
 

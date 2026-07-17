@@ -11,15 +11,11 @@ statement: |
 rubric:
 - criterion: The response explains the key Prometheus connection settings (the requested outcome)
   weight: 25
-  fact:
-    kind: resource
-    resource: datasource_detail
-    name: Prometheus
-- criterion: Explains the Prometheus type/flavor choice (Prometheus, Mimir, Thanos, Cortex) and that it tunes query behavior
+- criterion: Explains that the type/flavor dropdown (Prometheus and compatible backends such as Mimir, Thanos, or Cortex) tunes query behavior
   weight: 20
-- criterion: Describes the authentication options (no auth, basic auth, bearer token, or forwarding the user's OAuth identity)
+- criterion: Describes at least one authentication option, such as no auth, basic auth, bearer token, or forwarding the user's OAuth identity
   weight: 20
-- criterion: Mentions the scrape interval (timeInterval) and HTTP method (GET or POST) settings
+- criterion: Mentions at least one query-tuning setting, such as the scrape interval (timeInterval) or the HTTP method (GET/POST)
   weight: 15
 - criterion: Distinguishes proxy (server) versus browser (direct) access modes
   weight: 20

@@ -12,12 +12,15 @@ checks:
   type: state
   params:
     mode: datasource_detail
+    access: proxy
     type: influxdb
-    require_url: true
+    url_contains: influxdb.metrics.svc:8181
     json_data:
     - path: version
       equals: SQL
-  name: An InfluxDB datasource exists configured for SQL (InfluxDB 3.x)
+    - path: dbName
+      equals: telemetry
+  name: An InfluxDB datasource exists at influxdb.metrics.svc:8181 querying database telemetry, configured for SQL (InfluxDB 3.x)
 rubric:
 - criterion: The final response configures a new InfluxDB data source (the requested outcome)
   weight: 20

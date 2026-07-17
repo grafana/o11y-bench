@@ -1,0 +1,22 @@
+id: provision-datasources-yaml
+category: datasource_config
+tags:
+- datasource
+- provisioning
+- as-code
+- yaml
+statement: |
+  We want our Grafana datasources defined as code so a fresh environment always comes up with
+  them configured. Generate a Grafana provisioning YAML that sets up two datasources: a default
+  Prometheus at http://prometheus:9090 and a Loki at http://loki:3100, both using proxy access.
+rubric:
+- criterion: The final response provides a Grafana datasource provisioning YAML (the requested outcome)
+  weight: 20
+- criterion: Uses the correct provisioning schema, including apiVersion 1 and a top-level datasources list
+  weight: 20
+- criterion: Defines the Prometheus datasource with type prometheus, url http://prometheus:9090, and marks it as the default
+  weight: 20
+- criterion: Defines the Loki datasource with type loki and url http://loki:3100
+  weight: 20
+- criterion: Sets proxy access on the datasources and explains where the file must live (the provisioning/datasources directory) for Grafana to load it on startup
+  weight: 20

@@ -5,29 +5,18 @@ tags:
 - bigquery
 - learn
 - authentication
-setup_datasources:
-- uid: bigquery
-  name: BigQuery
-  type: grafana-bigquery-datasource
-  access: proxy
-  jsonData:
-    authenticationType: jwt
-    defaultProject: demo-project
-    clientEmail: grafana@demo-project.iam.gserviceaccount.com
 statement: |
   How does authentication work for the BigQuery data source?
 rubric:
-- criterion: The response explains how to authenticate the BigQuery data source (the requested outcome)
-  weight: 30
-  fact:
-    kind: resource
-    resource: datasource_detail
-    name: BigQuery
-- criterion: Describes Google JWT / service-account key authentication, where you upload or paste the service-account key JSON
-  weight: 20
-- criterion: Mentions the GCE default service account as an alternative when Grafana runs on Google Cloud
+- criterion: The response explains how authentication works for the BigQuery data source, covering the available authentication methods (the requested outcome)
+  weight: 25
+- criterion: Describes the Google JWT / service-account key method, where you upload or paste the service-account key file (JSON) so Grafana authenticates as that service account
   weight: 15
-- criterion: Notes the service account needs BigQuery roles such as Data Viewer and Job User
+- criterion: Describes the GCE default service account method, where Grafana running on Google Compute Engine or GKE uses the instance's attached service account via the metadata server with no key file
   weight: 15
-- criterion: States the private key is stored as a secret and that the client email and default project are required fields
-  weight: 20
+- criterion: Describes forwarding the user's OAuth identity, where Grafana passes the signed-in user's Google OAuth token so queries run under that user's own BigQuery permissions
+  weight: 15
+- criterion: Describes Google Workload Identity Federation, keyless authentication that lets an external identity impersonate a service account through federated token exchange without a long-lived key
+  weight: 15
+- criterion: Notes that the JWT service-account private key is stored as a write-only secret (not readable back after saving)
+  weight: 15

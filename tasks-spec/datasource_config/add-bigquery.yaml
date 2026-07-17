@@ -1,34 +1,35 @@
 id: add-bigquery
 category: datasource_config
 tags:
-- datasource
-- bigquery
-- add
+  - datasource
+  - bigquery
+  - add
 statement: |
   Set up a BigQuery data source for project "explore-prod" using JWT service-account
   authentication. The service account's client email is
   grafana-bq@explore-prod.iam.gserviceaccount.com, and queries should run in the US
   processing region.
 checks:
-- weight: 40
-  type: state
-  params:
-    mode: datasource_detail
-    type: grafana-bigquery-datasource
-    json_data:
-    - path: defaultProject
-      equals: explore-prod
-  name: A BigQuery datasource exists with the explore-prod default project
+  - weight: 40
+    type: state
+    params:
+      mode: datasource_detail
+      access: proxy
+      type: grafana-bigquery-datasource
+      json_data:
+        - path: defaultProject
+          equals: explore-prod
+    name: A BigQuery datasource exists with the explore-prod default project
 rubric:
-- criterion: The final response configures a new BigQuery data source (the requested outcome)
-  weight: 20
-  fact:
-    kind: resource
-    resource: datasource_detail
-    type: grafana-bigquery-datasource
-- criterion: Selects the BigQuery data source type (grafana-bigquery-datasource) and sets the default project to explore-prod
-  weight: 15
-- criterion: Captures the service-account client email
-  weight: 10
-- criterion: Notes the processing/default region as a relevant setting and that the service account needs BigQuery read and job permissions
-  weight: 10
+  - criterion: The final response configures a new BigQuery data source (the requested outcome)
+    weight: 20
+    fact:
+      kind: resource
+      resource: datasource_detail
+      type: grafana-bigquery-datasource
+  - criterion: Selects the BigQuery data source type (grafana-bigquery-datasource) and sets the default project to explore-prod
+    weight: 15
+  - criterion: Captures the service-account client email
+    weight: 15
+  - criterion: Notes at least one additional consideration, such as the processing region or the required BigQuery permissions
+    weight: 10

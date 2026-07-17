@@ -42,9 +42,12 @@ RUN curl -fsSL https://github.com/grafana/tempo/releases/download/v${TEMPO_VERSI
 
 # Pre-install datasource plugins used by datasource_config tasks (mysql/postgres/influxdb
 # are bundled in core). These let create_datasource succeed for plugin-backed types.
-RUN /usr/share/grafana/bin/grafana cli --pluginsDir /var/lib/grafana/plugins plugins install grafana-clickhouse-datasource && \
-    /usr/share/grafana/bin/grafana cli --pluginsDir /var/lib/grafana/plugins plugins install grafana-bigquery-datasource && \
-    /usr/share/grafana/bin/grafana cli --pluginsDir /var/lib/grafana/plugins plugins install yesoreyeram-infinity-datasource
+ARG CLICKHOUSE_DS_VERSION=4.19.0
+ARG BIGQUERY_DS_VERSION=3.2.0
+ARG INFINITY_DS_VERSION=3.10.1
+RUN /usr/share/grafana/bin/grafana cli --pluginsDir /var/lib/grafana/plugins plugins install grafana-clickhouse-datasource ${CLICKHOUSE_DS_VERSION} && \
+    /usr/share/grafana/bin/grafana cli --pluginsDir /var/lib/grafana/plugins plugins install grafana-bigquery-datasource ${BIGQUERY_DS_VERSION} && \
+    /usr/share/grafana/bin/grafana cli --pluginsDir /var/lib/grafana/plugins plugins install yesoreyeram-infinity-datasource ${INFINITY_DS_VERSION}
 
 # Create directories for all services
 RUN mkdir -p \

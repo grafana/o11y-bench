@@ -6,17 +6,24 @@ tags:
 - add
 statement: |
   I want to connect a Tempo backend at http://tempo.monitoring.svc:3200 for traces.
+checks:
+- weight: 40
+  type: state
+  params:
+    mode: datasource_detail
+    access: proxy
+    type: tempo
+    url_contains: tempo.monitoring.svc:3200
+    exclude_uids:
+    - tempo
+  name: A Tempo datasource exists pointing at tempo.monitoring.svc:3200
 rubric:
 - criterion: The final response configures a new Tempo data source pointing at http://tempo.monitoring.svc:3200 (the requested outcome)
-  weight: 25
+  weight: 20
   fact:
     kind: resource
     resource: datasource_inventory
 - criterion: Selects the Tempo data source type and sets the URL to http://tempo.monitoring.svc:3200 with proxy (server) access
-  weight: 20
-- criterion: Describes trace-to-logs correlation by pointing Tempo at a Loki data source
-  weight: 15
-- criterion: Mentions trace-to-metrics and/or service map configuration backed by a Prometheus data source
-  weight: 15
+  weight: 25
 - criterion: Notes the node graph option for visualizing span relationships
-  weight: 10
+  weight: 15

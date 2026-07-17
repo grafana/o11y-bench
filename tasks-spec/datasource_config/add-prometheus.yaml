@@ -7,17 +7,28 @@ tags:
 statement: |
   Set up a new Prometheus data source pointing at http://prometheus.monitoring.svc:9090. We're
   running vanilla Prometheus.
+checks:
+- weight: 40
+  type: state
+  params:
+    mode: datasource_detail
+    access: proxy
+    type: prometheus
+    url_contains: prometheus.monitoring.svc:9090
+    exclude_uids:
+    - prometheus
+  name: A Prometheus datasource exists pointing at prometheus.monitoring.svc:9090
 rubric:
 - criterion: The final response configures a new Prometheus data source pointing at http://prometheus.monitoring.svc:9090 (the requested outcome)
-  weight: 25
+  weight: 20
   fact:
     kind: resource
     resource: datasource_inventory
 - criterion: Selects the Prometheus data source type and sets the server URL to http://prometheus.monitoring.svc:9090 with proxy (server) access
   weight: 20
 - criterion: Sets the Prometheus type/flavor to Prometheus rather than Mimir, Thanos, or Cortex
-  weight: 15
+  weight: 10
 - criterion: Mentions the scrape interval (timeInterval) setting so the query step aligns with the server's scrape cadence
-  weight: 10
+  weight: 5
 - criterion: Notes authentication options (no auth, basic auth, or forwarding the user's OAuth identity) for securing the connection
-  weight: 10
+  weight: 5

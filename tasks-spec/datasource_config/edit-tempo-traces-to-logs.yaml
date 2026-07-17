@@ -15,6 +15,9 @@ checks:
     name: Tempo
     type: tempo
     json_data:
+    # Load-bearing: docker/datasources.yaml deliberately omits tracesToLogsV2 from the
+    # Tempo seed, so `present: true` proves the agent added it. Re-seeding that field
+    # would make this check pass with no agent action.
     - path: tracesToLogsV2
       present: true
     - path: tracesToLogsV2.datasourceUid
@@ -30,8 +33,8 @@ rubric:
 - criterion: Enables trace-to-logs (tracesToLogsV2) pointing at the Loki data source
   weight: 20
 - criterion: Sets a span start/end time shift window so the log lookup brackets the span's time range
-  weight: 15
+  weight: 10
 - criterion: Notes filtering by trace ID (and optionally span ID) to scope the correlated logs
-  weight: 10
+  weight: 5
 - criterion: Preserves the existing service map and trace-to-metrics settings
-  weight: 10
+  weight: 5

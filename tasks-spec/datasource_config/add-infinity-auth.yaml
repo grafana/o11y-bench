@@ -1,0 +1,34 @@
+id: add-infinity-auth
+category: datasource_config
+tags:
+- datasource
+- infinity
+- add
+- authentication
+statement: |
+  Add an Infinity data source that pulls JSON from our internal API at
+  https://api.internal.example.com. The API requires a bearer token to authenticate.
+checks:
+- weight: 40
+  type: state
+  params:
+    mode: datasource_detail
+    access: proxy
+    type: yesoreyeram-infinity-datasource
+    json_data:
+    - path: auth_method
+      equals: bearerToken
+  name: An Infinity datasource exists with the bearer-token auth method selected
+rubric:
+- criterion: The final response configures an Infinity data source for the internal JSON API (the requested outcome)
+  weight: 15
+  fact:
+    kind: resource
+    resource: datasource_detail
+    type: yesoreyeram-infinity-datasource
+- criterion: Selects the bearer token authentication method (auth_method bearerToken)
+  weight: 15
+- criterion: Adds the API host https://api.internal.example.com to the allowed hosts list
+  weight: 15
+- criterion: Notes that the bearer token value itself must be entered in the Grafana UI because the secret is write-only and cannot be set through the configuration API
+  weight: 15

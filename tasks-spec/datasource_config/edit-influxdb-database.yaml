@@ -44,6 +44,6 @@ rubric:
 - criterion: Keeps the SQL query language (InfluxDB 3.x) setting unchanged
   weight: 10
 - criterion: Preserves the URL and the API token secret
-  weight: 10
+  weight: 5
 - criterion: Confirms no other connection settings need to change
-  weight: 10
+  weight: 5

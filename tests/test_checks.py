@@ -1,9 +1,14 @@
+from pathlib import Path
 from unittest.mock import patch
+
+import yaml
 
 from grading import env_context
 from grading.checks import run_checks
 from grading.env_context import VerifierContext
 from grading.models import CheckItem, Message, ToolCall, ToolResult, Transcript
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _tool_grounded_trace_response() -> Transcript:
@@ -163,7 +168,9 @@ def test_state_datasource_detail_requires_configured_detail() -> None:
     assert "matches the expected state" in explanations["datasource detail"]
 
 
-def _run_datasource_detail_check(params: dict, detail: dict) -> tuple[float, str]:
+def _run_datasource_detail_check(
+    params: dict, detail: dict, detail_err: str = ""
+) -> tuple[float, str]:
     listing = [
         {
             "name": detail["name"],
@@ -178,7 +185,10 @@ def _run_datasource_detail_check(params: dict, detail: dict) -> tuple[float, str
             "grading.checks.fetch_grafana_datasources_checked",
             return_value=(listing, None),
         ),
-        patch("grading.checks.fetch_grafana_datasource_full", return_value=(detail, "")),
+        patch(
+            "grading.checks.fetch_grafana_datasource_full",
+            return_value=(detail, detail_err),
+        ),
     ):
         scores, explanations = run_checks(
             [
@@ -269,19 +279,166 @@ def test_state_datasource_detail_contains_searches_serialized_list() -> None:
     assert score == 1.0
 
 
+def test_edit_loki_derived_fields_spec_matches_conventional_field() -> None:
+    detail = {
+        "name": "Loki",
+        "type": "loki",
+        "jsonData": {
+            "derivedFields": [
+                {"name": "TraceID", "matcherRegex": "trace_id=(\\w+)", "datasourceUid": "tempo"}
+            ]
+        },
+    }
+    spec = yaml.safe_load(
+        (ROOT / "tasks-spec/datasource_config/edit-loki-derived-fields.yaml").read_text()
+    )
+    state_check = next(c for c in spec["checks"] if c["type"] == "state")
+    score, _ = _run_datasource_detail_check(state_check["params"], detail)
+    assert score == 1.0
+
+
 def test_state_datasource_detail_database() -> None:
     detail = {
         "name": "MySQL",
         "type": "mysql",
         "url": "mysql.prod.internal:3306",
         "access": "proxy",
-        "database": "appdb",
+        "jsonData": {"database": "appdb"},
     }
     score, _ = _run_datasource_detail_check(
-        {"type": "mysql", "require_url": True, "database": "appdb"},
+        {
+            "type": "mysql",
+            "require_url": True,
+            "json_data": [{"path": "database", "equals": "appdb"}],
+        },
         detail,
     )
     assert score == 1.0
+
+
+def test_state_datasource_detail_surfaces_detail_fetch_error_on_failure() -> None:
+    # Detail fetch failed, so the fallback list record lacks jsonData: the failure
+    # message must append the fetch error instead of only "no jsonData to evaluate".
+    fallback = {"name": "ClickHouse", "type": "grafana-clickhouse-datasource"}
+    detail_err = "Grafana datasource detail HTTP 403 for uid=ds."
+    score, explanation = _run_datasource_detail_check(
+        {"name": "ClickHouse", "json_data": [{"path": "protocol", "equals": "http"}]},
+        fallback,
+        detail_err=detail_err,
+    )
+    assert score == 0.0
+    assert "no jsonData to evaluate" in explanation
+    assert detail_err in explanation
+
+
+def test_state_datasource_detail_surfaces_detail_fetch_error_on_json_mismatch() -> None:
+    # jsonData is present but an expectation fails: the fetch error is still appended.
+    fallback = {
+        "name": "ClickHouse",
+        "type": "grafana-clickhouse-datasource",
+        "jsonData": {"protocol": "native"},
+    }
+    detail_err = "Grafana datasource detail request failed: timed out"
+    score, explanation = _run_datasource_detail_check(
+        {"name": "ClickHouse", "json_data": [{"path": "protocol", "equals": "http"}]},
+        fallback,
+        detail_err=detail_err,
+    )
+    assert score == 0.0
+    assert "jsonData evaluation failed" in explanation
+    assert "protocol" in explanation
+    assert detail_err in explanation
+
+
+def test_state_datasource_detail_passes_from_fallback_record_despite_fetch_error() -> None:
+    # If the fallback list record still has the needed data, a detail-fetch error must
+    # not turn a genuinely-correct datasource into a failure (no false negatives), and the
+    # error must not leak into the success message.
+    fallback = {
+        "name": "MySQL",
+        "type": "mysql",
+        "url": "mysql.prod.internal:3306",
+        "access": "proxy",
+        "database": "appdb",
+    }
+    score, explanation = _run_datasource_detail_check(
+        {"type": "mysql", "require_url": True, "database": "appdb"},
+        fallback,
+        detail_err="Grafana datasource detail request failed: timed out",
+    )
+    assert score == 1.0
+    assert "timed out" not in explanation
+
+
+def _run_datasource_detail_check_multi(
+    params: dict, listing: list[dict], detail: dict
+) -> tuple[float, str]:
+    with (
+        patch(
+            "grading.checks.fetch_grafana_datasources_checked",
+            return_value=(listing, None),
+        ),
+        patch("grading.checks.fetch_grafana_datasource_full", return_value=(detail, "")),
+    ):
+        scores, explanations = run_checks(
+            [
+                CheckItem.model_validate(
+                    {
+                        "name": "datasource detail",
+                        "weight": 1.0,
+                        "type": "state",
+                        "params": {"mode": "datasource_detail", **params},
+                    }
+                )
+            ],
+            Transcript(messages=[]),
+            VerifierContext(grafana_url="http://grafana"),
+        )
+    return scores["datasource detail"], explanations["datasource detail"]
+
+
+def test_state_datasource_detail_url_contains_finds_new_source_past_seed() -> None:
+    # A localhost seed of the same type must not shadow the newly added source at the
+    # requested URL (the add-loki / add-prometheus / add-tempo blind-spot fix).
+    listing = [
+        {"name": "Loki", "type": "loki", "uid": "loki", "url": "http://localhost:3100"},
+        {"name": "Logs", "type": "loki", "uid": "new", "url": "http://loki.monitoring.svc:3100"},
+    ]
+    score, explanation = _run_datasource_detail_check_multi(
+        {"type": "loki", "url_contains": "loki.monitoring.svc:3100", "exclude_uids": ["loki"]},
+        listing,
+        {"name": "Logs", "type": "loki", "url": "http://loki.monitoring.svc:3100"},
+    )
+    assert score == 1.0
+    assert "matches the expected state" in explanation
+
+
+def test_state_datasource_detail_url_contains_fails_when_only_seed_present() -> None:
+    listing = [
+        {"name": "Loki", "type": "loki", "uid": "loki", "url": "http://localhost:3100"},
+    ]
+    score, explanation = _run_datasource_detail_check_multi(
+        {"type": "loki", "url_contains": "loki.monitoring.svc:3100", "exclude_uids": ["loki"]},
+        listing,
+        {},
+    )
+    assert score == 0.0
+    assert "loki.monitoring.svc:3100" in explanation
+
+
+def test_state_datasource_detail_excluded_seed_at_requested_url_does_not_pass() -> None:
+    # If the agent does nothing but the seed happens to sit at the requested URL, the
+    # excluded seed uid must not satisfy the check (no real datasource was added).
+    listing = [
+        {"name": "Loki", "type": "loki", "uid": "loki", "url": "http://loki.monitoring.svc:3100"},
+    ]
+    score, explanation = _run_datasource_detail_check_multi(
+        {"type": "loki", "url_contains": "loki.monitoring.svc:3100", "exclude_uids": ["loki"]},
+        listing,
+        {},
+    )
+    assert score == 0.0
+    assert "loki" in explanation
 
 
 def test_state_tempo_trace_service_inventory_uses_attribute_values() -> None:
