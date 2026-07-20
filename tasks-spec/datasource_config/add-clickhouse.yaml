@@ -1,39 +1,39 @@
 id: add-clickhouse
 category: datasource_config
 tags:
-- datasource
-- clickhouse
-- add
+  - datasource
+  - clickhouse
+  - add
 statement: |
   Add a ClickHouse data source. Host is clickhouse.analytics.internal, and we use the native
   protocol on port 9000 with TLS. Connect as the user "default".
 checks:
-- weight: 40
-  type: state
-  params:
-    mode: datasource_detail
-    access: proxy
-    type: grafana-clickhouse-datasource
-    json_data:
-    - path: host
-      equals: clickhouse.analytics.internal
-    - path: protocol
-      equals: native
-    - path: port
-      equals: "9000"
-    - path: secure
-      equals: "true"
-  name: A ClickHouse datasource exists at clickhouse.analytics.internal using the native protocol on port 9000 with TLS
+  - weight: 40
+    type: state
+    params:
+      mode: datasource_detail
+      access: proxy
+      type: grafana-clickhouse-datasource
+      json_data:
+        - path: host
+          equals: clickhouse.analytics.internal
+        - path: protocol
+          equals: native
+        - path: port
+          equals: "9000"
+        - path: secure
+          equals: "true"
+    name: A ClickHouse datasource exists at clickhouse.analytics.internal using the native protocol on port 9000 with TLS
 rubric:
-- criterion: The final response configures a new ClickHouse data source (the requested outcome)
-  weight: 20
-  fact:
-    kind: resource
-    resource: datasource_detail
-    type: grafana-clickhouse-datasource
-- criterion: Selects the ClickHouse data source type (grafana-clickhouse-datasource), sets the host to clickhouse.analytics.internal, and captures the username default
-  weight: 15
-- criterion: Configures the native protocol on port 9000 and enables the secure/TLS option as requested
-  weight: 15
-- criterion: Mentions the default database setting
-  weight: 10
+  - criterion: The final response configures a new ClickHouse data source (the requested outcome)
+    weight: 20
+    fact:
+      kind: resource
+      resource: datasource_detail
+      type: grafana-clickhouse-datasource
+  - criterion: Selects the ClickHouse data source type (grafana-clickhouse-datasource), sets the host to clickhouse.analytics.internal, and captures the username default
+    weight: 15
+  - criterion: Configures the native protocol on port 9000 and enables the secure/TLS option as requested
+    weight: 15
+  - criterion: Mentions the connected user "default"
+    weight: 10
