@@ -1,0 +1,42 @@
+# This task evaluates whether an agent can correctly describe the rate at which the payment retry backlog
+# drained after an incident. In order to succeed, the agent must
+#   - understand that the relevant metric is a gauge rather than a counter, and consequently must choose
+#     gauge-appropriate metrics, such as choosing derive() over rate()
+#   - understand that the answer must use a positive value to describe a rate of decrease (drain rate)
+#     rather than using a negative value to describe a rate of change
+#   - understand that the change is relative to the peak, and therefore must correctly identify the peak
+#     to be able to accurately answer the query
+
+id: promql-retry-drain-rate
+category: prometheus_query
+tags:
+- promql
+- gauge
+- deriv
+- backlog
+- drain
+statement: |
+  The payment retry backlog peaked and then recovered after the incident. Once it started
+  draining, roughly how fast was the payment-service backlog shrinking (items per minute), and
+  about how long did the drain take from peak back to zero? I want the drain speed, not just
+  the peak.
+checks: []
+rubric:
+- criterion: The final response states the payment-service backlog drain speed in items per minute accurately.
+  weight: 40
+  fact:
+    kind: query
+    backend: prometheus
+    query: min_over_time(deriv(service_retry_queue_depth{job="payment-service"}[10m])[3h:1m]) * -60
+- criterion: The final response states about how high the payment-service backlog peaked before draining, matching the canonical peak depth
+  weight: 15
+  fact:
+    kind: query
+    backend: prometheus
+    query: max_over_time(service_retry_queue_depth{job="payment-service"}[3h])
+- criterion: The final response states that the drain from peak back to zero took on the order of 20 minutes (any answer between 18 and 25 minutes counts)
+  weight: 15
+- criterion: The final response describes the backlog as decreasing, draining, or shrinking during the post-peak recovery window, and does not claim it was growing or report a large positive growth rate for that window (as produced by applying rate() or increase() counter semantics to the gauge)
+  weight: 25
+- criterion: The response frames the numbers as a drain or recovery following the payment incident rather than only reporting bare values
+  weight: 5
