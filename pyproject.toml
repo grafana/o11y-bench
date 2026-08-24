@@ -86,6 +86,7 @@ files = [
     "reporting/report_paths.py",
     "reporting/run_report.py",
     "reporting/summary.py",
+    "reporting/stats.py",
     "o11y_bench/cli.py",
     "o11y_bench/agento11y_publish.py",
     "o11y_bench/agento11y_suite.py",
