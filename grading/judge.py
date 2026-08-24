@@ -90,7 +90,7 @@ def evaluate_with_llm(
             response = client.messages.create(
                 model=model,
                 max_tokens=8000,
-                temperature=0,
+                # anthropic SDK 1.0.0 removed the `temperature` parameter
                 messages=[
                     {
                         "role": "user",

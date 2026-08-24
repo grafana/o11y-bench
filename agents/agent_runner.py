@@ -1,6 +1,6 @@
 # /// script
 # dependencies = [
-#   "litellm==1.83.10",
+#   "litellm==1.97.0",
 #   # Match mcp version with harbor to avoid API breakage
 #   "mcp<2.0.0",
 # ]
