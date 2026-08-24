@@ -28,6 +28,7 @@ from .report_data import (
     trial_to_row,
 )
 from .run_report import load_trials
+from .stats import discordant_counts, mcnemar_exact_p, wilson_interval
 from .summary import summarize_trials
 
 JsonDict = dict[str, Any]
@@ -156,6 +157,66 @@ def winner_class(vals: list[float], idx: int, higher_is_better: bool = True) -> 
     return "font-bold text-green-700" if vals[idx] == best else "text-gray-500"
 
 
+# Runs with a p-value above this are treated as indistinguishable from the leader.
+SIGNIFICANCE_ALPHA = 0.05
+
+SUMMARY_LEGEND = (
+    "Bold on Pass^k and Pass@k marks the leading group via exact McNemar, p &gt; 0.05. "
+    "Other rows bold the single best value. 95% CI is a Wilson score interval."
+)
+
+
+def leading_group_mask(
+    jobs: list[JsonDict],
+    rates: list[float],
+    task_key: str,
+    alpha: float = SIGNIFICANCE_ALPHA,
+) -> list[float]:
+    """Return a copy of ``rates`` in which the leading group all carry the best rate.
+
+    The leading group is the highest-scoring run plus every run that an exact McNemar
+    test cannot separate from it. Rewriting those entries to the leader's value makes
+    :func:`winner_class` highlight all of them, without changing how it decides.
+
+    Each run is tested against the leader rather than against its neighbour, because the
+    highlight claims "best of these runs" -- a claim against every other run, not just
+    the runner-up -- and because non-significance does not chain: A may be inseparable
+    from B, and B from C, while A and C are clearly apart.
+
+    ``task_key`` selects the per-task pass/fail mapping the row is about, so the test is
+    paired over the tasks both runs attempted.
+
+    When no run separates from the leader every entry becomes equal, and
+    :func:`winner_class` leaves the whole row unstyled: this benchmark cannot rank these
+    runs on this metric.
+    """
+    if not rates:
+        return []
+
+    best = max(rates)
+    leader_idx = rates.index(best)
+    leader_tasks = jobs[leader_idx][task_key]
+
+    masked = list(rates)
+    for idx, job in enumerate(jobs):
+        if idx == leader_idx:
+            continue
+        only_leader, only_other = discordant_counts(leader_tasks, job[task_key])
+        if mcnemar_exact_p(only_leader, only_other) > alpha:
+            masked[idx] = best
+    return masked
+
+
+def format_rate_cell(rate: float, n_passed: int, n_tasks: int) -> str:
+    """Render a pass rate with its task counts and a 95% Wilson interval."""
+    low, high = wilson_interval(n_passed, n_tasks)
+    return (
+        f"{rate * 100:.1f}% ({n_passed}/{n_tasks})"
+        f'<div class="text-[10px] font-normal text-gray-400">'
+        f"95% CI {low * 100:.1f}&ndash;{high * 100:.1f}%</div>"
+    )
+
+
 def sort_jobs(jobs: list[JsonDict], sort_by: str) -> list[JsonDict]:
     if sort_by == "input":
         return jobs
@@ -224,6 +285,9 @@ def generate_comparison(
 
     pass_hat_rates = [j["pass_hat_rate"] for j in jobs]
     pass_rates = [j["pass_rate"] for j in jobs]
+    # Highlight the leading group rather than the top scorer alone: see leading_group_mask.
+    pass_hat_leaders = leading_group_mask(jobs, pass_hat_rates, "task_consistent")
+    pass_leaders = leading_group_mask(jobs, pass_rates, "task_passed")
     mean_scores = [j["mean_score"] for j in jobs]
     total_costs = [j["total_cost"] for j in jobs]
     total_secs = [j["total_agent_secs"] for j in jobs]
@@ -235,18 +299,18 @@ def generate_comparison(
             summary_row(
                 "Pass^k",
                 [
-                    f"{j['pass_hat_rate'] * 100:.1f}% ({j['tasks_consistent']}/{j['total_tasks']})"
+                    format_rate_cell(j["pass_hat_rate"], j["tasks_consistent"], j["total_tasks"])
                     for j in jobs
                 ],
-                pass_hat_rates,
+                pass_hat_leaders,
             ),
             summary_row(
                 "Pass@k",
                 [
-                    f"{j['pass_rate'] * 100:.1f}% ({j['tasks_passed']}/{j['total_tasks']})"
+                    format_rate_cell(j["pass_rate"], j["tasks_passed"], j["total_tasks"])
                     for j in jobs
                 ],
-                pass_rates,
+                pass_leaders,
             ),
             summary_row("Mean Score", [f"{j['mean_score'] * 100:.1f}%" for j in jobs], mean_scores),
             summary_row(
@@ -342,6 +406,7 @@ def generate_comparison(
         n_tasks=len(all_tasks),
         header_cols=header_cols,
         summary_rows=summary_rows,
+        summary_legend=SUMMARY_LEGEND,
         task_rows=task_rows,
     )
 
