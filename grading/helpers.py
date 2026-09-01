@@ -1,14 +1,16 @@
 import re
-from collections.abc import Iterator
 from typing import Any
 
 from grading.env_context import synthetic_eval_time_unix
-from grading.models import ToolCall, Transcript
+from grading.models import Transcript
 
 _TRACE_ID_HEX_32 = re.compile(r"(?<![0-9a-fA-F])([0-9a-fA-F]{32})(?![0-9a-fA-F])")
-# Tempo search JSON often omits a leading zero (31 hex chars); get-trace uses 32.
+# _TRACE_ID_HEX_32 catches most trace IDs, but only matches exactly 32 hex chars.
+# Tempo search JSON sometimes omits a leading zero (31 chars), so this pattern
+# looks for known key names to pick those up too, but only in the JSON format we
+# know that trace commands use.
 _TRACE_ID_JSON = re.compile(
-    r'"(?:traceID|traceId)"\s*:\s*"([0-9a-fA-F]{31,32})"',
+    r'"trace[_]?id"\s*:\s*"([0-9a-fA-F]{31,32})"',
     re.IGNORECASE,
 )
 
@@ -45,27 +47,6 @@ def assistant_text_blobs(transcript: Transcript, assistant_scope: str) -> list[s
         if msg.role == "assistant" and msg.content:
             blobs.append(msg.content)
     return blobs
-
-
-def iter_tool_calls(transcript: Transcript) -> Iterator[ToolCall]:
-    for msg in transcript.messages:
-        if msg.role == "assistant" and msg.tool_calls:
-            yield from msg.tool_calls
-
-
-def tool_call_id_to_name(transcript: Transcript) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for tool_call in iter_tool_calls(transcript):
-        out[tool_call.id] = tool_call.name
-    return out
-
-
-def as_name_set(raw: str | list[str] | tuple[str, ...] | set[str] | None) -> set[str]:
-    if raw is None:
-        return set()
-    if isinstance(raw, str):
-        return {raw}
-    return {str(value) for value in raw}
 
 
 def require_stack_url(url: str, env_name: str) -> str | None:
@@ -109,22 +90,12 @@ def response_cites_trace_id_prefix(
                 continue
             if not re.fullmatch(r"[0-9a-f]+", trace_id):
                 continue
+            # if the shortest prefix isn't in the text, no longer prefix can be
+            # either. A bit of a fast-fail.
+            if trace_id[:prefix_min_chars] not in haystack:
+                continue
             for prefix_len in range(len(trace_id), prefix_min_chars - 1, -1):
                 prefix = trace_id[:prefix_len]
                 if prefix in haystack:
                     return True, prefix
     return False, None
-
-
-def tempo_tool_matches_name(
-    tool_name: str,
-    allowed_names: set[str] | None,
-    name_prefix: str,
-) -> bool:
-    if allowed_names is not None:
-        return tool_name in allowed_names
-    return tool_name.startswith(name_prefix)
-
-
-def additional_trace_id_tool_names(params: dict[str, Any]) -> set[str]:
-    return as_name_set(params.get("additional_tool_names"))

@@ -14,7 +14,7 @@ from grading.models import (
     DatasourceInventoryStateParams,
     Problem,
     TempoTraceServiceInventoryStateParams,
-    ToolTraceIdGroundingParams,
+    TraceIdGroundingParams,
 )
 
 
@@ -26,7 +26,7 @@ def problem_requires_live_stack(problem: Problem) -> bool:
 
 def check_requires_live_stack(params: object) -> bool:
     match params:
-        case ToolTraceIdGroundingParams():
+        case TraceIdGroundingParams():
             return False
         case (
             DashboardStateParams()
