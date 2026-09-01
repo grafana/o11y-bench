@@ -124,6 +124,80 @@ def test_run_checks_dispatches_trace_grounding() -> None:
     assert "grounded in tool results" in explanations["trace grounding"]
 
 
+def _bash_grounded_trace_response() -> Transcript:
+    return Transcript(
+        messages=[
+            Message(
+                role="assistant",
+                tool_calls=[
+                    ToolCall(
+                        id="bash-1",
+                        name="bash",
+                        arguments={"command": "gcx traces query -d tempo '{}' -o json"},
+                    )
+                ],
+            ),
+            Message(
+                role="tool",
+                tool_results=[
+                    ToolResult(
+                        tool_call_id="bash-1",
+                        content='{"traces":[{"traceID":"2f0d253c538f68595d959a8a39d7a6a0"}]}',
+                    )
+                ],
+            ),
+            Message(
+                role="assistant",
+                content="A representative error trace is 2f0d253c538f6859 in order-service.",
+            ),
+        ]
+    )
+
+
+def test_trace_grounding_default_accepts_non_tempo_tool_names() -> None:
+    scores, explanations = run_checks(
+        [
+            CheckItem.model_validate(
+                {
+                    "name": "trace grounding",
+                    "weight": 1.0,
+                    "type": "grounding",
+                    "params": {"mode": "tool_trace_id", "prefix_min_chars": 8},
+                }
+            )
+        ],
+        _bash_grounded_trace_response(),
+        VerifierContext(tempo_url="http://tempo"),
+    )
+
+    assert scores["trace grounding"] == 1.0
+    assert "grounded in tool results" in explanations["trace grounding"]
+
+
+def test_trace_grounding_honours_explicit_tempo_prefix() -> None:
+    scores, explanations = run_checks(
+        [
+            CheckItem.model_validate(
+                {
+                    "name": "trace grounding",
+                    "weight": 1.0,
+                    "type": "grounding",
+                    "params": {
+                        "mode": "tool_trace_id",
+                        "prefix_min_chars": 8,
+                        "tool_name_prefix": "tempo_",
+                    },
+                }
+            )
+        ],
+        _bash_grounded_trace_response(),
+        VerifierContext(tempo_url="http://tempo"),
+    )
+
+    assert scores["trace grounding"] == 0.0
+    assert "prefix 'tempo_'" in explanations["trace grounding"]
+
+
 def test_state_datasource_detail_requires_configured_detail() -> None:
     with patch(
         "grading.checks.fetch_grafana_datasources_checked",

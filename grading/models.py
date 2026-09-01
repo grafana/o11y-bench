@@ -219,7 +219,8 @@ class ToolTraceIdGroundingParams(SpecModel):
     prefix_min_chars: int = 8
     assistant_scope: Literal["final", "all"] = "final"
     tool_name: str | list[str] | None = None
-    tool_name_prefix: str = "tempo_"
+    # Empty default = scan all tool results; set explicitly (e.g. "tempo_") to filter.
+    tool_name_prefix: str = ""
     additional_tool_names: str | list[str] | None = None
 
 
