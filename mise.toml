@@ -5,7 +5,7 @@ _.file = ".env"
 
 [tools]
 python = "3.14"
-uv = "0.11.8"
+uv = "0.12.10"
 
 # -- Setup (dependencies for bench tasks) --
 
