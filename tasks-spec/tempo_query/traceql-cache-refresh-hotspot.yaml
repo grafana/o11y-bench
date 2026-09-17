@@ -7,8 +7,8 @@ tags:
 - user-service
 - latency
 statement: |
-  Earlier user-profile requests slowed down, but I want the trace-level hotspot rather than a general
-  service summary. Looking at GET /api/users traces from that earlier incident window, which
+  User-profile requests have been slowing down, but I want the trace-level hotspot rather than a
+  general service summary. Looking at slow GET /api/users traces from roughly the last day, which
   operation inside user-service keeps eating the time, and does that same hotspot recur across
   several slow examples or only some of them? Include one trace id you actually saw.
 checks:
