@@ -53,6 +53,7 @@ def running_regrade_stack(
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     container_name = f"o11y-regrade-{trial_dir.name.lower()}-{uuid4().hex[:8]}"
 
+    bind_host = regrade_bind_host()
     command = [
         "docker",
         "run",
@@ -66,16 +67,11 @@ def running_regrade_stack(
         f"{setup_path.resolve()}:/task/setup.json:ro",
         "-v",
         f"{artifacts_dir.resolve()}:/logs/artifacts",
-        "-p",
-        "127.0.0.1::3000",
-        "-p",
-        "127.0.0.1::9090",
-        "-p",
-        "127.0.0.1::3100",
-        "-p",
-        "127.0.0.1::3200",
-        "-p",
-        "127.0.0.1::8080",
+        *[
+            arg
+            for port in (3000, 9090, 3100, 3200, 8080)
+            for arg in ("-p", f"{bind_host}::{port}" if bind_host else f"{port}")
+        ],
         image,
     ]
     subprocess.run(["docker", "rm", "-f", container_name], check=False, capture_output=True)
@@ -84,11 +80,11 @@ def running_regrade_stack(
     previous_env = {name: os.environ.get(name) for name in _STACK_ENV_NAMES}
     try:
         ports = {
-            "GRAFANA_URL": f"http://127.0.0.1:{docker_host_port(container_name, 3000)}",
-            "PROMETHEUS_URL": f"http://127.0.0.1:{docker_host_port(container_name, 9090)}",
-            "LOKI_URL": f"http://127.0.0.1:{docker_host_port(container_name, 3100)}",
-            "TEMPO_URL": f"http://127.0.0.1:{docker_host_port(container_name, 3200)}",
-            "MCP_URL": f"http://127.0.0.1:{docker_host_port(container_name, 8080)}/mcp",
+            "GRAFANA_URL": f"http://{docker_host_endpoint(container_name, 3000)}",
+            "PROMETHEUS_URL": f"http://{docker_host_endpoint(container_name, 9090)}",
+            "LOKI_URL": f"http://{docker_host_endpoint(container_name, 3100)}",
+            "TEMPO_URL": f"http://{docker_host_endpoint(container_name, 3200)}",
+            "MCP_URL": f"http://{docker_host_endpoint(container_name, 8080)}/mcp",
         }
         wait_for_http_ok(f"{ports['MCP_URL'][:-4]}/", timeout_sec=timeout_sec)
         os.environ.update(ports)
@@ -103,15 +99,46 @@ def running_regrade_stack(
                 os.environ[name] = value
 
 
-def docker_host_port(container_name: str, container_port: int) -> int:
+def regrade_bind_host() -> str:
+    """Address the sidecar publishes on.
+
+    Defaults to loopback. Set O11Y_REGRADE_BIND_HOST to override, or to the empty
+    string to let the daemon choose — needed when DOCKER_HOST points at a daemon
+    that does not share this process's loopback (a remote or proxied socket),
+    where a loopback-bound publish is unreachable.
+    """
+    return os.environ.get("O11Y_REGRADE_BIND_HOST", "127.0.0.1").strip()
+
+
+def docker_host_endpoint(container_name: str, container_port: int) -> str:
+    """Return "host:port" for a published port, as the daemon actually bound it.
+
+    The bound address is read back rather than assumed: with a remote or proxied
+    DOCKER_HOST the daemon may publish on an address that is not this process's
+    loopback, and connecting to 127.0.0.1 then fails with connection refused.
+    """
     result = subprocess.run(
         ["docker", "port", container_name, f"{container_port}/tcp"],
         check=True,
         capture_output=True,
         text=True,
     )
-    mapping = result.stdout.strip().splitlines()[0].strip()
-    return int(mapping.rsplit(":", 1)[1])
+    mappings = [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
+    if not mappings:
+        raise RuntimeError(f"{container_name} has no published mapping for {container_port}/tcp")
+
+    # Prefer IPv4; a bracketed IPv6 mapping is only usable as a fallback.
+    mapping = next((m for m in mappings if not m.startswith("[")), mappings[0])
+    host, _, port = mapping.rpartition(":")
+    host = host.strip("[]")
+
+    # A wildcard bind is not a connectable address.
+    if host in ("0.0.0.0", "::", ""):
+        host = "127.0.0.1"
+    override = os.environ.get("O11Y_REGRADE_CONNECT_HOST", "").strip()
+    if override:
+        host = override
+    return f"{host}:{int(port)}"
 
 
 def wait_for_http_ok(url: str, *, timeout_sec: float) -> None:
@@ -122,6 +149,14 @@ def wait_for_http_ok(url: str, *, timeout_sec: float) -> None:
             with urllib.request.urlopen(url, timeout=5) as response:
                 if 200 <= response.status < 500:
                     return
+        except urllib.error.HTTPError as exc:
+            # Any status the server answers means it is listening, which is all
+            # this waits for. mcp-grafana serves on /mcp and 404s "/", and
+            # urlopen raises on 4xx instead of returning, so this has to be
+            # caught rather than read off the response.
+            if 200 <= exc.code < 500:
+                return
+            last_error = str(exc)
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             last_error = str(exc)
         time.sleep(2)
