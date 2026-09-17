@@ -68,7 +68,10 @@ metrics_generator:
       filter_server_spans: false
       flush_to_storage: true
       max_block_duration: 30s
-      complete_block_timeout: 1s
+      # Upstream default is 1h. At 1s the generator dropped completed blocks
+      # almost immediately and refused any metrics query older than that window
+      # ("time range must be within last 1s"), so TraceQL metrics never worked.
+      complete_block_timeout: 720h
       max_block_bytes: 500000000
     service_graphs:
       dimensions: []
@@ -79,6 +82,13 @@ metrics_generator:
     remote_write: []
   traces_storage:
     path: /var/tempo/generator/traces
+    # This is the generator's own WAL, with its own ingestion-time slack that
+    # defaults to 2m — separate from storage.trace.wal below. Scenarios are
+    # backdated days, so every span fell outside it and each block claimed a
+    # zero-width time range at wall-clock ingestion time instead of the span
+    # range, leaving metrics queries with nothing to match. Keep in step with
+    # the search-path slack below.
+    ingestion_time_range_slack: 720h
 
 storage:
   trace:
