@@ -13,11 +13,19 @@ RUN apk add --no-cache \
     ca-certificates \
     python3
 
-# Install mcp-grafana (uses x86_64 instead of amd64 in release names)
+# Install mcp-grafana — use a local binary if present, otherwise fetch the
+# pinned release. Release names use x86_64 instead of amd64.
+# --mount=type=bind exposes the build context at /ctx without adding a layer.
 ARG MCP_GRAFANA_VERSION=0.11.6
-RUN MCP_ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "arm64" || echo "x86_64") && \
-    curl -fsSL https://github.com/grafana/mcp-grafana/releases/download/v${MCP_GRAFANA_VERSION}/mcp-grafana_Linux_${MCP_ARCH}.tar.gz \
-    | tar xz -C /usr/local/bin mcp-grafana && \
+RUN --mount=type=bind,source=.,target=/ctx \
+    if [ -x /ctx/mcp-grafana ]; then \
+      echo "Installing mcp-grafana from local binary"; \
+      cp /ctx/mcp-grafana /usr/local/bin/mcp-grafana; \
+    else \
+      MCP_ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "arm64" || echo "x86_64") && \
+      curl -fsSL https://github.com/grafana/mcp-grafana/releases/download/v${MCP_GRAFANA_VERSION}/mcp-grafana_Linux_${MCP_ARCH}.tar.gz \
+      | tar xz -C /usr/local/bin mcp-grafana; \
+    fi && \
     chmod +x /usr/local/bin/mcp-grafana
 
 # Install Prometheus

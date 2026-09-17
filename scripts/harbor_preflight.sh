@@ -122,6 +122,17 @@ else
   rm -f "$ROOT/environment/gcx"
 fi
 
+# Same pattern for mcp-grafana: LOCAL_MCP_GRAFANA points at a Linux binary to
+# benchmark an unreleased build instead of the version pinned in the Dockerfile.
+if [ -n "${LOCAL_MCP_GRAFANA:-}" ]; then
+  echo "Using local mcp-grafana binary: $LOCAL_MCP_GRAFANA"
+  cp "$LOCAL_MCP_GRAFANA" "$ROOT/docker/mcp-grafana"
+  chmod +x "$ROOT/docker/mcp-grafana"
+  trap 'rm -f "$ROOT/environment/gcx" "$ROOT/docker/mcp-grafana"' EXIT INT TERM
+else
+  rm -f "$ROOT/docker/mcp-grafana"
+fi
+
 echo "Building shared Harbor main image: o11y-bench-main:latest"
 
 # dont cache to make sure the version of gcx is always up to date
