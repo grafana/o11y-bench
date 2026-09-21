@@ -30,7 +30,9 @@ PROMETHEUS_DATA_DIR = "/prometheus"
 # Empty OTLP payload is enough to verify the HTTP ingest path is up.
 _OTLP_HEALTH_BODY = b'{"resourceSpans":[]}'
 
-HOURS_OF_HISTORY = 24  # 1 day (enough for trend analysis; incidents are 3-6h before end)
+# 24h PromQL/LogQL ranges evaluated at snapshot time need samples *before* now-24h
+# (range vectors are left-open; Grafana steps can sit 5m before the window start).
+HOURS_OF_HISTORY = 26  # 24h benchmark window plus a 2h pre-window for range functions
 METRICS_INTERVAL = 30  # seconds between metric samples
 
 # Services to simulate
@@ -1040,6 +1042,8 @@ def generate_all_data() -> dict[str, ServiceMetrics]:
                 "promtool",
                 "tsdb",
                 "create-blocks-from",
+                # Compatible promtool block size (2h * 3^3), not data duration.
+                "--max-block-duration=54h",
                 "openmetrics",
                 metrics_file,
                 PROMETHEUS_DATA_DIR,
