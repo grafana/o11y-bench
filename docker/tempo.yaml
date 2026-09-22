@@ -68,7 +68,7 @@ metrics_generator:
       filter_server_spans: false
       flush_to_storage: true
       max_block_duration: 30s
-      complete_block_timeout: 1s
+      complete_block_timeout: 720h
       max_block_bytes: 500000000
     service_graphs:
       dimensions: []
@@ -79,6 +79,8 @@ metrics_generator:
     remote_write: []
   traces_storage:
     path: /var/tempo/generator/traces
+    # Keep in step with storage.trace.wal slack below.
+    ingestion_time_range_slack: 720h
 
 storage:
   trace:

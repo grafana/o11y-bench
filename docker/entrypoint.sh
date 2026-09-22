@@ -192,16 +192,43 @@ wait_for_service "http://localhost:9090/-/ready" "Prometheus" "$PROMETHEUS_MAX_A
 wait_for_service "http://localhost:3000/api/health" "Grafana" "$GRAFANA_MAX_ATTEMPTS" "$GRAFANA_LOG"
 provision_task_resources
 
-# Start mcp-grafana in streamable-http mode for Harbor agent access
+# Start mcp-grafana in streamable-http mode for Harbor agent access.
+#
+# Flags are probed against --help rather than passed blind, so one entrypoint
+# works across mcp-grafana versions: the pinned release predates --allowed-hosts,
+# and category flags such as --disable-sift disappear when a category is removed
+# upstream. Go's flag package exits non-zero on an unknown flag, so passing one
+# unconditionally would leave the sidecar with no MCP server at all.
+MCP_HELP="$(/usr/local/bin/mcp-grafana --help 2>&1 || true)"
+
+# Go's flag package lists flags single-dashed and indented ("  -disable-oncall").
+# Anchor on that shape: a bare substring match would also hit flag names quoted
+# inside another flag's description text.
+mcp_flag_supported() {
+    printf '%s\n' "$MCP_HELP" | grep -qE "^[[:space:]]+-$1([[:space:]]|$)"
+}
+
+MCP_FLAGS=(-t streamable-http --address :8080)
+
+for category in sift oncall incident asserts pyroscope; do
+    if mcp_flag_supported "disable-$category"; then
+        MCP_FLAGS+=("--disable-$category")
+    else
+        echo "  note: --disable-$category unsupported by this mcp-grafana build; skipping"
+    fi
+done
+
+# Agents reach the sidecar by its compose alias (o11y-stack-<project>), not via
+# loopback. Newer builds validate the Host header and answer 403 to anything
+# outside the --address loopback default, which fails every trial. The container
+# is ephemeral, network-isolated, and serves only synthetic data, so allow any.
+if mcp_flag_supported "allowed-hosts"; then
+    MCP_FLAGS+=(--allowed-hosts '*')
+fi
+
 echo "Starting mcp-grafana (streamable-http on :8080)..."
-GRAFANA_URL=http://localhost:3000 /usr/local/bin/mcp-grafana \
-    -t streamable-http \
-    --address :8080 \
-    --disable-sift \
-    --disable-oncall \
-    --disable-incident \
-    --disable-asserts \
-    --disable-pyroscope \
+echo "  flags: ${MCP_FLAGS[*]}"
+GRAFANA_URL=http://localhost:3000 /usr/local/bin/mcp-grafana "${MCP_FLAGS[@]}" \
     > "$MCP_GRAFANA_LOG" 2>&1 &
 
 # Wait for mcp-grafana to be listening (404 is fine — it serves on /mcp path)

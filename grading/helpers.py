@@ -123,7 +123,13 @@ def tempo_tool_matches_name(
 ) -> bool:
     if allowed_names is not None:
         return tool_name in allowed_names
-    return tool_name.startswith(name_prefix)
+    if tool_name.startswith(name_prefix):
+        return True
+    # mcp-grafana exposes Tempo under two naming conventions: proxied tools are
+    # prefixed (tempo_traceql-search) while native tools infix the datasource
+    # (search_tempo_traces). Matching the prefix alone silently harvests zero
+    # trace IDs from a native-tool transcript, which scores a correct answer 0.
+    return name_prefix.strip("_") in tool_name.split("_")
 
 
 def additional_trace_id_tool_names(params: dict[str, Any]) -> set[str]:

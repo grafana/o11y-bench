@@ -249,6 +249,27 @@ cd ~/workspace/gcx && GOOS=linux GOARCH=arm64 mise run build
 LOCAL_GCX=/path/to/gcx/bin/gcx-linux mise run bench:job -- --model openai/gpt-5.4-nano
 ```
 
+### Using A Local mcp-grafana Build
+
+The sidecar normally installs the mcp-grafana release pinned in `docker/Dockerfile`.
+To benchmark an unreleased build — comparing a branch against `main`, say — set
+`LOCAL_MCP_GRAFANA` to the path of an mcp-grafana executable **for Linux**.
+
+When set, the sidecar image uses your local binary instead of downloading from
+GitHub. The `docker/mcp-grafana` file is gitignored and cleaned up after build.
+
+Build statically, since the sidecar image is Alpine-based:
+
+```bash
+cd ~/workspace/mcp-grafana && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /tmp/mcp-grafana-branch ./cmd/mcp-grafana
+LOCAL_MCP_GRAFANA=/tmp/mcp-grafana-branch mise run bench:job -- --model openai/gpt-5.4-nano
+```
+
+To A/B two builds, run them as separate jobs **sequentially** with distinct
+`--job-name` values. The sidecar image tag is shared, so each run rebuilds it —
+running two arms concurrently would swap one arm's binary out from under it.
+Pin `O11Y_SCENARIO_TIME_ISO` across both so they see identical synthetic data.
+
 
 ## Running Your Own Models
 
