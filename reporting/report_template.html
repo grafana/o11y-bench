@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>o11y-bench — {model_display} — {job_timestamp}</title>
+  <title>o11y-bench — {model_display} — {job_name}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     pre {{ white-space: pre-wrap; word-break: break-word; }}
@@ -40,6 +40,7 @@
       <div class="mt-2 text-sm text-gray-500 space-y-0.5">
         <p><strong>Model:</strong> {model_display}</p>
         <p><strong>Job:</strong> <code class="bg-gray-100 px-1 rounded font-mono text-xs">{job_id}</code></p>
+        <p><strong>Job name:</strong> {job_name}</p>
         <p><strong>Timestamp:</strong> {job_timestamp}</p>
         <p><strong>Shots per task:</strong> {shots_per_task}</p>
       </div>

@@ -155,7 +155,20 @@ def render_transcript(messages: list[JsonDict]) -> str:
                 content_blocks = [{"type": "text", "text": raw}]
 
             agent_parts = ['<div class="pl-3 border-l-2 border-green-300 mb-2">']
-            agent_parts.append('<span class="font-medium text-green-700 text-xs">Agent:</span>')
+            metrics = msg.get("metrics")
+            metrics_html = ""
+            if metrics:
+                tok_in = metrics.get("prompt_tokens", 0)
+                tok_out = metrics.get("completion_tokens", 0)
+                cost = metrics.get("cost_usd")
+                cost_str = f" · ${cost:.4f}" if cost else ""
+                metrics_html = (
+                    f' <span class="text-[10px] text-gray-400 font-normal">'
+                    f"{tok_in:,} in / {tok_out:,} out{cost_str}</span>"
+                )
+            agent_parts.append(
+                f'<span class="font-medium text-green-700 text-xs">Agent:</span>{metrics_html}'
+            )
 
             for block in content_blocks:
                 if not isinstance(block, dict):
@@ -295,7 +308,14 @@ def _load_atif_trajectory(path: Path) -> list[JsonDict]:
                         "input": tc.get("arguments", {}),
                     }
                 )
-            messages.append({"type": "assistant", "message": {"content": content_blocks}})
+            step_metrics = step.get("metrics")
+            messages.append(
+                {
+                    "type": "assistant",
+                    "message": {"content": content_blocks},
+                    **({"metrics": step_metrics} if step_metrics else {}),
+                }
+            )
             if observation and "results" in observation:
                 for result in observation["results"]:
                     messages.append(
@@ -457,7 +477,13 @@ def generate_report(job_dir: Path, tasks_dir: Path | None = None) -> str:
     first_result = trials[0]["result"]
     model_display = trial_model_display(first_result, trials[0]["result_path"].resolve())
     job_id = first_result.get("config", {}).get("job_id", job_dir.name)
-    job_timestamp = job_dir.name
+    job_result_path = job_dir / "result.json"
+    if job_result_path.exists():
+        with open(job_result_path) as f:
+            job_result = json.load(f)
+        job_timestamp = job_result.get("started_at", job_dir.name)
+    else:
+        job_timestamp = job_dir.name
 
     # Group trials by task_name (for multi-shot)
     tasks: dict[str, list[JsonDict]] = {}
@@ -702,6 +728,7 @@ def generate_report(job_dir: Path, tasks_dir: Path | None = None) -> str:
     return template.format(
         model_display=escape_html(model_display),
         job_id=escape_html(job_id),
+        job_name=escape_html(job_dir.name),
         job_timestamp=escape_html(job_timestamp),
         shots_per_task=shots_per_task,
         k_label_title=escape_html(k_label.title()),
