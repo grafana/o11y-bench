@@ -1,7 +1,7 @@
 # o11y-bench: Self-contained observability stack for Harbor
 # Prometheus + Loki + Tempo + Grafana + mcp-grafana (streamable-http)
 
-FROM grafana/grafana:12.4.2@sha256:83749231c3835e390a3144e5e940203e42b9589761f20ef3169c716e734ad505
+FROM grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
 
 ARG TARGETARCH
 
