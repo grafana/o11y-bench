@@ -4,7 +4,7 @@ min_version = "2024.1.0"
 _.file = ".env"
 
 [tools]
-python = "3.14"
+python = "3.15.0"
 uv = "0.11.8"
 
 # -- Setup (dependencies for bench tasks) --
