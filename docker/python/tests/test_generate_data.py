@@ -202,7 +202,7 @@ def generate(
             return runs[clock]
         logs: list[dict] = []
         with pytest.MonkeyPatch.context() as mp:
-            for name in ("wait_for_tempo", "flush_tempo", "wait_for_tempo_searchable"):
+            for name in ("wait_for_tempo", "wait_for_loki_complete", "wait_for_tempo_searchable"):
                 mp.setattr(generate_data, name, lambda *args, **kwargs: None)
             mp.setattr(generate_data, "push_traces_batch", lambda spans: True)
             mp.setattr(generate_data, "push_logs_batch", lambda batch: logs.extend(batch))
@@ -316,3 +316,46 @@ def test_wait_for_tempo_searchable_raises_when_search_stays_empty(
 
     with pytest.raises(RuntimeError, match="Tempo search never became ready"):
         generate_data.wait_for_tempo_searchable(end_time, max_attempts=2)
+
+
+def test_wait_for_tempo_searchable_waits_until_every_trace_is_indexed(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # Tempo has no flush call: search answers from the first block while later ones are still
+    # being cut, so a partial dataset must not count as ready.
+    end_time = datetime(2026, 4, 19, 16, 0, tzinfo=UTC)
+    indexed = iter([10, 40, 50])
+
+    monkeypatch.setattr(
+        generate_data,
+        "fetch_tempo_search_traces",
+        lambda _query, _start, _end, *, limit=20: ([{"traceID": "abc"}], ""),
+    )
+    monkeypatch.setattr(
+        generate_data, "fetch_tempo_metrics_series", lambda _q, _start, _end: ([{"value": 1}], "")
+    )
+    monkeypatch.setattr(
+        generate_data, "fetch_tempo_root_span_count", lambda _start, _end: (next(indexed), "")
+    )
+    monkeypatch.setattr(generate_data.time, "sleep", lambda _seconds: None)
+
+    generate_data.wait_for_tempo_searchable(end_time, max_attempts=3, expected_traces=50)
+
+    with pytest.raises(RuntimeError, match="never became ready"):
+        monkeypatch.setattr(generate_data, "fetch_tempo_root_span_count", lambda _s, _e: (49, ""))
+        generate_data.wait_for_tempo_searchable(end_time, max_attempts=2, expected_traces=50)
+
+
+def test_wait_for_loki_complete_waits_for_every_line(monkeypatch: pytest.MonkeyPatch):
+    end_time = datetime(2026, 4, 19, 16, 0, tzinfo=UTC)
+    counts = iter([0, 40, 50])
+
+    monkeypatch.setattr(generate_data.urllib.request, "urlopen", lambda *_a, **_kw: None)
+    monkeypatch.setattr(generate_data, "fetch_loki_line_count", lambda _end: (next(counts), ""))
+    monkeypatch.setattr(generate_data.time, "sleep", lambda _seconds: None)
+
+    generate_data.wait_for_loki_complete(end_time, 50, max_attempts=3)
+
+    monkeypatch.setattr(generate_data, "fetch_loki_line_count", lambda _end: (49, ""))
+    with pytest.raises(RuntimeError, match="Loki never became ready"):
+        generate_data.wait_for_loki_complete(end_time, 50, max_attempts=2)

@@ -1,7 +1,7 @@
 # o11y-bench: Self-contained observability stack for Harbor
 # Prometheus + Loki + Tempo + Grafana + mcp-grafana (streamable-http)
 
-FROM grafana/grafana:12.4.2@sha256:83749231c3835e390a3144e5e940203e42b9589761f20ef3169c716e734ad505
+FROM grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
 
 ARG TARGETARCH
 
@@ -35,24 +35,41 @@ RUN --mount=type=bind,source=.,target=/ctx \
     chmod +x /usr/local/bin/mcp-grafana
 
 # Install Prometheus
-ARG PROMETHEUS_VERSION=3.10.0
-RUN curl -fsSL https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-${TARGETARCH}.tar.gz \
-    | tar xz --strip-components=1 -C /usr/local/bin \
+# SHA-256 of the release tarballs (see the release's sha256sums.txt); update with the version.
+ARG PROMETHEUS_VERSION=3.15.0
+ARG PROMETHEUS_SHA256_amd64=2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0
+ARG PROMETHEUS_SHA256_arm64=f1f90ec08e849d494ca66c611470afc50192f0355f1a61c33f2cbde02d067823
+RUN PROM_SHA256=$([ "$TARGETARCH" = "arm64" ] && echo "$PROMETHEUS_SHA256_arm64" || echo "$PROMETHEUS_SHA256_amd64") && \
+    curl -fsSL -o /tmp/prometheus.tar.gz https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-${TARGETARCH}.tar.gz && \
+    echo "$PROM_SHA256  /tmp/prometheus.tar.gz" | sha256sum -c - && \
+    tar xzf /tmp/prometheus.tar.gz --strip-components=1 -C /usr/local/bin \
         prometheus-${PROMETHEUS_VERSION}.linux-${TARGETARCH}/prometheus \
-        prometheus-${PROMETHEUS_VERSION}.linux-${TARGETARCH}/promtool
+        prometheus-${PROMETHEUS_VERSION}.linux-${TARGETARCH}/promtool && \
+    rm /tmp/prometheus.tar.gz
 
 # Install Loki
-ARG LOKI_VERSION=3.6.7
-RUN curl -fsSL https://github.com/grafana/loki/releases/download/v${LOKI_VERSION}/loki-linux-${TARGETARCH}.zip \
+# SHA-256 of the release zips (see the release's SHA256SUMS); update with the version.
+ARG LOKI_VERSION=3.7.8
+ARG LOKI_SHA256_amd64=62aea42c9cba52cd1642b3666ab37019a0ce4c24ab50b07e85dccc8d812f7d61
+ARG LOKI_SHA256_arm64=a874c10ffefe4d66c914b8aac8897159451d3026469598341aa03c76084697de
+RUN LOKI_SHA256=$([ "$TARGETARCH" = "arm64" ] && echo "$LOKI_SHA256_arm64" || echo "$LOKI_SHA256_amd64") && \
+    curl -fsSL https://github.com/grafana/loki/releases/download/v${LOKI_VERSION}/loki-linux-${TARGETARCH}.zip \
     -o /tmp/loki.zip && \
+    echo "$LOKI_SHA256  /tmp/loki.zip" | sha256sum -c - && \
     unzip -qp /tmp/loki.zip loki-linux-${TARGETARCH} > /usr/local/bin/loki && \
     chmod +x /usr/local/bin/loki && \
     rm /tmp/loki.zip
 
 # Install Tempo
-ARG TEMPO_VERSION=2.10.3
-RUN curl -fsSL https://github.com/grafana/tempo/releases/download/v${TEMPO_VERSION}/tempo_${TEMPO_VERSION}_linux_${TARGETARCH}.tar.gz \
-    | tar xz -C /usr/local/bin tempo
+# SHA-256 of the release tarballs (see the release's SHA256SUMS); update with the version.
+ARG TEMPO_VERSION=3.1.0
+ARG TEMPO_SHA256_amd64=9604ab46348270a42954801bba91cd65335e16568ef886bdf71b988fdcb7ac4e
+ARG TEMPO_SHA256_arm64=e4092dcf2b93e141be77e300b539f6c5cceefa9803417d7d635c6797d9bc19ad
+RUN TEMPO_SHA256=$([ "$TARGETARCH" = "arm64" ] && echo "$TEMPO_SHA256_arm64" || echo "$TEMPO_SHA256_amd64") && \
+    curl -fsSL -o /tmp/tempo.tar.gz https://github.com/grafana/tempo/releases/download/v${TEMPO_VERSION}/tempo_${TEMPO_VERSION}_linux_${TARGETARCH}.tar.gz && \
+    echo "$TEMPO_SHA256  /tmp/tempo.tar.gz" | sha256sum -c - && \
+    tar xzf /tmp/tempo.tar.gz -C /usr/local/bin tempo && \
+    rm /tmp/tempo.tar.gz
 
 # Create directories for all services
 RUN mkdir -p \

@@ -667,6 +667,45 @@ def push_logs_batch(logs: list[dict]) -> bool:
         return False
 
 
+def fetch_loki_line_count(end_time: datetime) -> tuple[int, str]:
+    """Lines in the whole history, as the query path sees them (flushed chunks, not memory)."""
+    params = urllib.parse.urlencode(
+        {
+            "query": f'sum(count_over_time({{job=~".+"}}[{HOURS_OF_HISTORY + 1}h]))',
+            "time": int(end_time.timestamp()) + 3600,
+        }
+    )
+    try:
+        with urllib.request.urlopen(f"{LOKI_URL}/loki/api/v1/query?{params}", timeout=10) as resp:
+            result = json.load(resp)["data"]["result"]
+        return (int(float(result[0]["value"][1])) if result else 0), ""
+    except Exception as exc:
+        return 0, f"Loki line count failed: {exc}"
+
+
+def wait_for_loki_complete(
+    end_time: datetime, expected_lines: int, max_attempts: int = 60, poll_interval: float = 1.0
+) -> None:
+    # Loki serves backdated logs from flushed chunks only and flushes on a timer (up to ~30s
+    # after boot), so queries answer empty until then. Flush now and wait for every line.
+    indexed, err = 0, ""
+    for _ in range(max_attempts):
+        try:
+            urllib.request.urlopen(
+                urllib.request.Request(f"{LOKI_URL}/flush", data=b"", method="POST"), timeout=10
+            )
+        except Exception as exc:
+            err = f"Loki flush failed: {exc}"
+        indexed, count_err = fetch_loki_line_count(end_time)
+        if indexed == expected_lines:
+            log(f"  Loki ready ({indexed} lines)")
+            return
+        err = count_err or err
+        time.sleep(poll_interval)
+    log(f"  Loki never indexed every line: {indexed}/{expected_lines} {err}")
+    raise RuntimeError("Loki never became ready")
+
+
 def wait_for_tempo(max_attempts: int = 10) -> None:
     url = f"{TEMPO_URL}/v1/traces"
     headers = {"Content-Type": "application/json"}
@@ -681,19 +720,6 @@ def wait_for_tempo(max_attempts: int = 10) -> None:
             if attempt == max_attempts - 1:
                 log(f"  Tempo OTLP not ready after {max_attempts} attempts: {exc}")
                 raise RuntimeError("Tempo OTLP never became ready") from exc
-            time.sleep(1)
-
-
-def flush_tempo(max_attempts: int = 5) -> None:
-    req = urllib.request.Request(f"{TEMPO_QUERY_URL}/flush", data=b"", method="POST")
-    for attempt in range(max_attempts):
-        try:
-            urllib.request.urlopen(req, timeout=10)
-            return
-        except Exception as exc:
-            if attempt == max_attempts - 1:
-                log(f"  Tempo flush failed after {max_attempts} attempts: {exc}")
-                raise RuntimeError("Tempo flush never succeeded") from exc
             time.sleep(1)
 
 
@@ -733,6 +759,26 @@ def fetch_tempo_metrics_series(query: str, start_sec: int, end_sec: int) -> tupl
     return [item for item in series if isinstance(item, dict)], ""
 
 
+def fetch_tempo_root_span_count(start_sec: int, end_sec: int) -> tuple[int, str]:
+    """Traces in the window, counted as root spans; each generated trace has exactly one."""
+    params = urllib.parse.urlencode(
+        {
+            "q": "{ nestedSetParent < 0 } | count_over_time()",
+            "start": start_sec,
+            "end": end_sec,
+            # One step over the whole window, so the series carries a single total.
+            "step": f"{end_sec - start_sec}s",
+        }
+    )
+    url = f"{TEMPO_QUERY_URL}/api/metrics/query?{params}"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            payload = json.load(resp)
+        return int(sum(float(series.get("value", 0)) for series in payload.get("series", []))), ""
+    except Exception as exc:
+        return 0, f"Tempo trace count failed: {exc}"
+
+
 def _probe_detail(name: str, traces: list[dict], err: str) -> str:
     if traces:
         return f"{name}={len(traces)}"
@@ -740,13 +786,18 @@ def _probe_detail(name: str, traces: list[dict], err: str) -> str:
 
 
 def wait_for_tempo_searchable(
-    end_time: datetime, max_attempts: int = 120, poll_interval: float = 1.0
+    end_time: datetime,
+    max_attempts: int = 120,
+    poll_interval: float = 1.0,
+    expected_traces: int | None = None,
 ) -> None:
     # Probes are tracked independently: broad and error searches may become ready
     # on different polls (errors are sparser), and requiring both on the same tick
     # caused spurious failures. Poll interval matches Tempo's blocklist_poll.
     # TraceQL metrics lag search by about a minute after ingest; graders read them as facts,
-    # so the stack is not ready until they return series too.
+    # so the stack is not ready until they return series too. Tempo cuts blocks on its own
+    # clock and has no flush call, so search can answer from the first block while later ones
+    # are still being written: with `expected_traces`, wait until every trace is queryable.
     start_sec = int((end_time - timedelta(hours=24)).timestamp())
     end_sec = int(end_time.timestamp())
     broad_traces: list[dict] = []
@@ -768,6 +819,15 @@ def wait_for_tempo_searchable(
             metrics_series, metrics_err = fetch_tempo_metrics_series(
                 "{ } | rate()", start_sec, end_sec
             )
+
+        if expected_traces is not None and broad_traces and error_traces and metrics_series:
+            indexed, count_err = fetch_tempo_root_span_count(
+                int((end_time - timedelta(hours=HOURS_OF_HISTORY)).timestamp()) - 600,
+                end_sec + 3600,
+            )
+            if indexed != expected_traces:
+                metrics_err = count_err or f"{indexed}/{expected_traces} traces indexed"
+                metrics_series = []
 
         if broad_traces and error_traces and metrics_series:
             log(
@@ -1068,10 +1128,10 @@ def generate_all_data() -> dict[str, ServiceMetrics]:
     if log_batch:
         push_logs_batch(log_batch)
 
-    log("  Flushing Tempo blocks...")
-    flush_tempo()
+    log("  Waiting for Loki to serve every line...")
+    wait_for_loki_complete(end_time, total_logs)
     log("  Waiting for Tempo search to become ready...")
-    wait_for_tempo_searchable(end_time)
+    wait_for_tempo_searchable(end_time, expected_traces=total_traces)
 
     log(f"  Requests: {total_requests:,}")
     log(f"  Traces: {total_traces:,}")
