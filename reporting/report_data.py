@@ -9,7 +9,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from .model_costs import estimate_cost_usd
 from .report_paths import normalize_repo_path
 
 MODEL_LABELS: dict[str, str] = {
@@ -391,17 +390,6 @@ def agent_result_metrics(result: JsonDict) -> tuple[float, int, int, int]:
     n_cache_tokens = agent_result.get("n_cache_tokens") or 0
     n_output_tokens = agent_result.get("n_output_tokens") or 0
     cost_usd = agent_result.get("cost_usd")
-    if cost_usd is None or float(cost_usd) <= 0:
-        model_info = (result.get("agent_info") or {}).get("model_info") or {}
-        model_name = model_info.get("name") or ""
-        estimated_cost_usd = estimate_cost_usd(
-            str(model_name),
-            int(n_input_tokens),
-            int(n_cache_tokens),
-            int(n_output_tokens),
-        )
-        if estimated_cost_usd is not None:
-            cost_usd = estimated_cost_usd
     if cost_usd is None:
         cost_usd = 0.0
     return float(cost_usd), int(n_input_tokens), int(n_cache_tokens), int(n_output_tokens)
