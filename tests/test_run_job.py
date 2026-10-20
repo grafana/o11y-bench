@@ -36,6 +36,10 @@ def test_build_command_produces_valid_harbor_invocation() -> None:
     assert _option_values(command, "--ak") == ["temperature=0"]
     high = harbor.build_command(dataclasses.replace(spec, reasoning_effort="high"))
     assert "reasoning_effort=high" in _option_values(high, "--ak")
+    custom = harbor.build_command(dataclasses.replace(spec, agent_import_path="pkg.mod:MyAgent"))
+    assert _option_values(custom, "--agent") == ["pkg.mod:MyAgent"]
+    builtin = harbor.build_command(dataclasses.replace(spec, agent="opencode"))
+    assert _option_values(builtin, "--agent") == ["opencode"]
 
 
 def test_build_command_maps_task_filters_to_harbor_include_task_name() -> None:
