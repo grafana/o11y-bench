@@ -85,6 +85,47 @@ def test_build_litellm_kwargs_prefers_reasoning_effort_over_temperature() -> Non
     assert "temperature" not in result
 
 
+@pytest.mark.parametrize(
+    ("model", "expected"),
+    [
+        # Claude 5.x thinks adaptively unless told otherwise; each family takes a different "off".
+        ("anthropic/claude-haiku-5-5", {"thinking": {"type": "disabled"}}),
+        ("anthropic/claude-sonnet-5-5", {"thinking": {"type": "between_tools"}}),
+        ("openai/gpt-5.4-mini", {"reasoning_effort": "none"}),
+        ("openai/gpt-5.4-2026-03-05", {"reasoning_effort": "none"}),
+        ("openai/gpt-5.6-luna", {"reasoning_effort": "none"}),
+        ("openai/gpt-6-sol", {"reasoning_effort": "none"}),
+        # Models that do not think unless asked: "off" sends nothing.
+        ("anthropic/claude-haiku-4-5-20251001", {}),
+        ("anthropic/claude-sonnet-4-6", {}),
+        ("openai/gpt-5.1-codex-mini", {}),
+        ("google/gemini-3-flash-preview", {}),
+    ],
+)
+def test_off_turns_thinking_off_the_way_each_model_accepts(
+    model: str, expected: dict[str, object]
+) -> None:
+    result = agent_runner.build_litellm_kwargs(model, [], "off", None)
+
+    settings = {k: v for k, v in result.items() if k in ("thinking", "reasoning_effort")}
+    assert settings == expected
+
+
+@pytest.mark.parametrize(
+    "model", ["anthropic/claude-opus-5-5", "anthropic/claude-fable-5-1", "openai/gpt-6.1-sol"]
+)
+def test_off_fails_for_models_that_cannot_turn_thinking_off(model: str) -> None:
+    with pytest.raises(ValueError, match="cannot turn thinking off"):
+        agent_runner.build_litellm_kwargs(model, [], "off", None)
+
+
+def test_default_effort_sends_no_thinking_settings_but_keeps_temperature() -> None:
+    result = agent_runner.build_litellm_kwargs("anthropic/claude-haiku-5-5", [], "default", "0")
+
+    assert "thinking" not in result and "reasoning_effort" not in result
+    assert result["temperature"] == 0.0
+
+
 def test_build_litellm_kwargs_omits_temperature_for_claude_opus_4_7() -> None:
     result = agent_runner.build_litellm_kwargs("anthropic/claude-opus-4-7", [], "off", "0")
 

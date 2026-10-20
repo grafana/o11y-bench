@@ -25,6 +25,8 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.8",
     "mypy>=1.10",
+    # agents/agent_runner.py runs in the container with its own pinned deps; this only types it.
+    "mcp>=2,<3",
     "types-Markdown>=3.8",
     "types-pyyaml>=6.0",
 ]

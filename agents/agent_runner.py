@@ -1,8 +1,8 @@
 # /// script
 # dependencies = [
-#   "litellm==1.97.0",
-#   # Match mcp version with harbor to avoid API breakage
-#   "mcp<2.0.0",
+#   "litellm==1.106.0",
+#   # litellm needs mcp 2.x; the runner uses its client API (read/write streams, snake_case fields)
+#   "mcp==2.3.0",
 # ]
 # ///
 """o11y-bench agent runner — executes inside the Harbor container.
@@ -52,35 +52,6 @@ def _load_task_prompt_template() -> str:
 SYSTEM_PROMPT = _load_system_prompt()
 TASK_PROMPT_TEMPLATE = _load_task_prompt_template()
 MAX_AGENT_STEPS = 50
-# Same table as reporting/model_costs.py (task image avoids that import); keep aligned.
-USD_PER_1M_TOKENS: Final[dict[str, tuple[float, float, float]]] = {
-    "gpt-5.4-mini": (0.75, 0.075, 4.50),
-    "gpt-5.4-mini-2026-03-17": (0.75, 0.075, 4.50),
-    "gpt-5.4-nano": (0.20, 0.02, 1.25),
-    "gpt-5.4-nano-2026-03-17": (0.20, 0.02, 1.25),
-}
-
-
-def normalize_model_name(model_name: str) -> str:
-    if "/" in model_name:
-        return model_name.rsplit("/", 1)[-1]
-    return model_name
-
-
-def estimate_cost_usd(
-    model_name: str, n_input_tokens: int, n_cache_tokens: int, n_output_tokens: int
-) -> float | None:
-    rates = USD_PER_1M_TOKENS.get(normalize_model_name(model_name))
-    if rates is None:
-        return None
-
-    input_rate, cached_input_rate, output_rate = rates
-    uncached_input_tokens = max(0, n_input_tokens - n_cache_tokens)
-    return (
-        (uncached_input_tokens * input_rate)
-        + (n_cache_tokens * cached_input_rate)
-        + (n_output_tokens * output_rate)
-    ) / 1_000_000
 
 
 def relax_mcp_tool_input_schema_for_llm(schema: dict[str, Any]) -> dict[str, Any]:
@@ -119,7 +90,7 @@ async def discover_tools(session: Any) -> list[dict[str, Any]]:
     result = await session.list_tools()
     tools: list[dict[str, Any]] = []
     for t in result.tools:
-        params: Any = t.inputSchema
+        params: Any = t.input_schema
         if isinstance(params, dict):
             params = relax_mcp_tool_input_schema_for_llm(params)
         tools.append(
@@ -251,6 +222,25 @@ async def completion_with_retries(
     raise RuntimeError("completion retries exhausted")
 
 
+def effort_off_settings(model: str) -> dict[str, Any]:
+    """Request settings that switch thinking off; raise for models that cannot be switched off.
+
+    Omitting them is not "off": some models think unless told otherwise. Each branch is what that
+    provider API accepts; litellm (drop_params) silently drops settings it thinks a model cannot
+    take, so don't guess. Failing beats a run labelled "off" that still thinks.
+    """
+    if "claude-haiku-5" in model:
+        return {"thinking": {"type": "disabled"}}
+    if "claude-sonnet-5" in model:
+        # Rejects "disabled"; this is its "off" (short between-tool updates may still appear).
+        return {"thinking": {"type": "between_tools"}}
+    if re.search(r"claude-(opus|fable)-5|gpt-6\.1", model):
+        raise ValueError(f"{model} cannot turn thinking off; use --reasoning-effort low or default")
+    if re.search(r"gpt-(5\.[4-9]|6)", model):
+        return {"reasoning_effort": "none"}
+    return {}
+
+
 def build_litellm_kwargs(
     model: str,
     tools: list[dict[str, Any]],
@@ -265,15 +255,24 @@ def build_litellm_kwargs(
             {"location": "message", "role": "system"},
         ],
     }
-    if reasoning_effort != "off":
+    if reasoning_effort == "off":
+        litellm_kwargs.update(effort_off_settings(model))
+    elif reasoning_effort != "default":  # "default" sends nothing: the provider decides
         litellm_kwargs["reasoning_effort"] = reasoning_effort
-    elif temperature is not None and "claude-opus-4-7" not in model:
+    if (
+        reasoning_effort in ("off", "default")
+        and temperature is not None
+        and "claude-opus-4-7" not in model
+    ):
         litellm_kwargs["temperature"] = float(temperature)
 
     return litellm_kwargs
 
 
 async def run_agent() -> None:
+    # Price from the cost map bundled with the pinned litellm, not a remote one (must be set
+    # before litellm is imported).
+    os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
     import litellm
     from mcp.client.session import ClientSession
     from mcp.client.streamable_http import streamable_http_client
@@ -336,7 +335,7 @@ async def run_agent() -> None:
 
     try:
         print(f"Connecting to MCP at {mcp_url}...")
-        async with streamable_http_client(mcp_url) as (read, write, _):
+        async with streamable_http_client(mcp_url) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await discover_tools(session)
@@ -386,15 +385,6 @@ async def run_agent() -> None:
                         step_cost = litellm.completion_cost(completion_response=resp) or 0.0
                     except Exception:
                         step_cost = 0.0
-                    if step_cost <= 0:
-                        estimated = estimate_cost_usd(
-                            model,
-                            int(prompt_tokens),
-                            int(cached_tokens),
-                            int(completion_tokens),
-                        )
-                        if estimated is not None:
-                            step_cost = estimated
                     stats["cost"] += step_cost
 
                     msg = cast(Any, resp).choices[0].message
