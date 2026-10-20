@@ -227,6 +227,7 @@ mise run bench:job -- --model anthropic/claude-sonnet-4-6 --task-name query-cpu-
 
 This runs OpenCode with gcx and gcx skills pre-installed in the container, but
 with MCP tools stripped so the agent can only reach Grafana through gcx.
+gcx is pinned to a release in `environment/Dockerfile`, so runs compare the same CLI.
 The container image has `GRAFANA_SERVER` and `GRAFANA_ORG_ID` set so gcx
 connects to the sidecar Grafana automatically.
 
