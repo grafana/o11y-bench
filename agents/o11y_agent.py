@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from harbor.agents.base import BaseAgent
+from harbor.agents.capabilities import AgentCapabilities
 from harbor.agents.installed.base import NonZeroAgentExitCodeError
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
@@ -57,6 +58,9 @@ def build_runner_command() -> str:
 
 class O11yBenchAgent(BaseAgent):
     """Agent that runs the o11y-bench harness inside the container."""
+
+    # Harbor refuses tasks that configure MCP servers unless the agent declares support.
+    capabilities = AgentCapabilities(mcp_servers=True)
 
     def __init__(
         self,
