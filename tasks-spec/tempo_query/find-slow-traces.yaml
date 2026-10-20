@@ -33,7 +33,7 @@ rubric:
     query: '{ resource.service.name =~ "order-service|payment-service" && name =~ "handle POST /api/(orders|payments)"
       && duration > 300ms } | select(resource.service.name, name)'
     limit: 20
-- criterion: The final response's read of its example slow trace agrees with the Source of truth on its duration and on the span with the most own time
+- criterion: What the final response says about its example slow trace, its duration and which service or span the time goes to, agrees with that trace in the Source of truth
   weight: 15
   fact:
     kind: cited_trace
