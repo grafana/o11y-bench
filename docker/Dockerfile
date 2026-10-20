@@ -16,7 +16,7 @@ RUN apk add --no-cache \
 # Install mcp-grafana — use a local binary if present, otherwise fetch the
 # pinned release. Release names use x86_64 instead of amd64.
 # --mount=type=bind exposes the build context at /ctx without adding a layer.
-ARG MCP_GRAFANA_VERSION=0.11.6
+ARG MCP_GRAFANA_VERSION=2.0.2
 RUN --mount=type=bind,source=.,target=/ctx \
     if [ -x /ctx/mcp-grafana ]; then \
       echo "Installing mcp-grafana from local binary"; \

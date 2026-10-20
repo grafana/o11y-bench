@@ -195,10 +195,10 @@ provision_task_resources
 # Start mcp-grafana in streamable-http mode for Harbor agent access.
 #
 # Flags are probed against --help rather than passed blind, so one entrypoint
-# works across mcp-grafana versions: the pinned release predates --allowed-hosts,
-# and category flags such as --disable-sift disappear when a category is removed
-# upstream. Go's flag package exits non-zero on an unknown flag, so passing one
-# unconditionally would leave the sidecar with no MCP server at all.
+# works across mcp-grafana builds: flags come and go (a local build may lack
+# --allowed-hosts, category flags like --disable-sift vanish with their
+# category). Go's flag package exits non-zero on an unknown flag, which would
+# leave the sidecar with no MCP server.
 MCP_HELP="$(/usr/local/bin/mcp-grafana --help 2>&1 || true)"
 
 # Go's flag package lists flags single-dashed and indented ("  -disable-oncall").
