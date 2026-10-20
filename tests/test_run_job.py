@@ -1,4 +1,5 @@
 import argparse
+import dataclasses
 import json
 import sys
 from contextlib import nullcontext
@@ -30,7 +31,15 @@ def test_build_command_produces_valid_harbor_invocation() -> None:
     assert "--yes" in command
     assert "openai/gpt-5.4-mini" in command
     assert "test-job" in command
-    assert "temperature=0" in _option_values(command, "--ak")
+    assert _option_values(command, "--agent") == [config.DEFAULT_AGENT_IMPORT_PATH]
+    # "off" is the default and not every agent accepts it, so it is not sent.
+    assert _option_values(command, "--ak") == ["temperature=0"]
+    high = harbor.build_command(dataclasses.replace(spec, reasoning_effort="high"))
+    assert "reasoning_effort=high" in _option_values(high, "--ak")
+    custom = harbor.build_command(dataclasses.replace(spec, agent_import_path="pkg.mod:MyAgent"))
+    assert _option_values(custom, "--agent") == ["pkg.mod:MyAgent"]
+    builtin = harbor.build_command(dataclasses.replace(spec, agent="opencode"))
+    assert _option_values(builtin, "--agent") == ["opencode"]
 
 
 def test_build_command_maps_task_filters_to_harbor_include_task_name() -> None:
@@ -90,7 +99,9 @@ def test_build_command_from_args_adds_repo_defaults() -> None:
     assert "--yes" in command
     assert str(config.JOB_CONFIG) in command
     assert str(config.TASKS_DIR) in command
-    assert config.DEFAULT_AGENT_IMPORT_PATH in command
+    assert _option_values(command, "--agent") == [config.DEFAULT_AGENT_IMPORT_PATH]
+    builtin = harbor.build_command_from_args(["--agent", "claude-code"])
+    assert _option_values(builtin, "--agent") == ["claude-code"]
 
 
 def test_execute_job_resumes_from_saved_config(monkeypatch, tmp_path) -> None:
