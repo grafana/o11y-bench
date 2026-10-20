@@ -13,25 +13,26 @@ statement: |
   or if one still looks elevated.
 checks: []
 rubric:
-- criterion: The final response states the peak cache refresh lag roughly accurately.
+- criterion: The final response states the peak cache refresh lag accurately.
   weight: 30
   fact:
     kind: query
     backend: prometheus
     query: max_over_time(service_cache_refresh_lag_seconds{job="user-service"}[12h])
-- criterion: The final response states the peak user-service p95 latency roughly accurately.
+- criterion: The final response states the peak user-service p95 latency within 10% of the truth; the
+    peak moves with the query's rate window and step.
   weight: 35
   fact:
     kind: query
     backend: prometheus
-    query: max_over_time(histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="user-service"}[5m])) by (le))[12h:1m])
+    query: max_over_time(histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="user-service"}[5m]))
+      by (le))[12h:1m])
 - criterion: The final response states Current cache refresh lag accurately.
   weight: 15
   fact:
     kind: query
     backend: prometheus
     query: service_cache_refresh_lag_seconds{job="user-service"}
-- criterion: The final response clearly distinguishes the cache lag peak from the p95 latency peak instead of collapsing them into one symptom
-  weight: 10
-- criterion: The final response correctly states whether both signals are back near normal by the end of the window, or whether one still remains elevated
+- criterion: The final response correctly states whether both signals are back near normal by the end
+    of the window, or whether one still remains elevated
   weight: 10

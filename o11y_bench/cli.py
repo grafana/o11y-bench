@@ -110,6 +110,17 @@ def main() -> None:
     regrade_parser.add_argument("--path", type=Path)
     regrade_parser.add_argument("--job-name")
     regrade_parser.add_argument("--quiet", action="store_true")
+    regrade_parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Grade from each trial's saved verifier/truth.json; no stack, no live reads",
+    )
+    regrade_parser.add_argument(
+        "--n-concurrent",
+        type=int,
+        default=1,
+        help="Tasks to regrade at once, each on its own stack",
+    )
 
     args = _parse_args(parser)
 
@@ -253,7 +264,13 @@ def _cmd_regrade(args: argparse.Namespace) -> None:
         if latest is None:
             raise SystemExit(f"No job dir found for --job-name {args.job_name!r} under {target}")
         target = latest
-    execute_regrade(target, tasks_dir=tasks_dir, quiet=args.quiet)
+    execute_regrade(
+        target,
+        tasks_dir=tasks_dir,
+        quiet=args.quiet,
+        offline=args.offline,
+        n_concurrent=args.n_concurrent,
+    )
 
 
 def _resolve_tasks_path(path: Path | None) -> Path:

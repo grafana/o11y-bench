@@ -20,8 +20,10 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, TypedDict
+from xml.etree.ElementTree import Element
 
 import markdown
+from markdown.treeprocessors import Treeprocessor
 
 from .categories import category_label
 from .report_data import (
@@ -29,6 +31,7 @@ from .report_data import (
     agent_seconds,
     classify_trial_artifact,
     count_tool_calls,
+    criterion_scores,
     escape_html,
     format_cost,
     format_duration,
@@ -93,6 +96,24 @@ def _tool_result_plaintext(content: object) -> str:
 # ---------------------------------------------------------------------------
 # Transcript rendering (Harbor JSONL format)
 # ---------------------------------------------------------------------------
+
+
+class _SafeLinks(Treeprocessor):
+    """Keep only web, mail and in-page links: a `javascript:` href would run in the report."""
+
+    def run(self, root: Element) -> None:
+        for link in root.iter("a"):
+            if not link.get("href", "").lower().startswith(("http://", "https://", "mailto:", "#")):
+                link.attrib.pop("href", None)
+
+
+def render_markdown(text: str) -> str:
+    """Agent text as markdown, with raw HTML shown as text: the answer is model output."""
+    md = markdown.Markdown(extensions=("tables", "fenced_code", "sane_lists"), output_format="html")
+    md.preprocessors.deregister("html_block")
+    md.inlinePatterns.deregister("html")
+    md.treeprocessors.register(_SafeLinks(md), "safe_links", 5)
+    return md.convert(text)
 
 
 def render_transcript(messages: list[JsonDict]) -> str:
@@ -178,11 +199,7 @@ def render_transcript(messages: list[JsonDict]) -> str:
                 elif btype == "text":
                     text = block.get("text", "")
                     if text.strip():
-                        body = markdown.markdown(
-                            text,
-                            extensions=("tables", "fenced_code", "sane_lists"),
-                            output_format="html",
-                        )
+                        body = render_markdown(text)
                         agent_parts.append(
                             '<div class="agent-markdown mt-1 text-gray-700 text-xs leading-relaxed">'
                             f"{body}</div>"
@@ -230,16 +247,7 @@ def render_transcript(messages: list[JsonDict]) -> str:
 def render_criteria(grading: JsonDict) -> str:
     """Render grading criteria as checkmark list with explanations."""
     items: list[str] = []
-    for key, val in grading.items():
-        if key in (
-            "score",
-            "checks_passed",
-            "rubric_passed",
-            "validators_passed",
-            "criteria_passed",
-        ) or key.startswith("explanation:"):
-            continue
-        score = float(val)
+    for key, score in criterion_scores(grading).items():
         icon = (
             '<span class="text-green-600">&#10003;</span>'
             if score >= 1.0
@@ -248,6 +256,9 @@ def render_criteria(grading: JsonDict) -> str:
             else '<span class="text-red-600">&#10007;</span>'
         )
         explanation = grading.get(f"explanation:{key}", "")
+        outcome = grading.get(f"outcome:{key}")
+        if outcome and outcome != "pass":
+            explanation = f"[{outcome}] {explanation}"
         explanation_html = (
             f'<div class="text-gray-400 mt-0.5">{escape_html(explanation)}</div>'
             if explanation

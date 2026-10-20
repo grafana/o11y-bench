@@ -17,6 +17,7 @@ from grading.transcript_parser import parse_transcript
 from reporting.report_data import (
     agent_result_metrics,
     agent_seconds,
+    grading_details,
     load_trials,
     reward_counts_as_pass,
     trial_reasoning_effort,
@@ -342,7 +343,7 @@ def _score_specs(
     version: str,
 ) -> list[Any]:
     _, experiments = _import_agento11y()
-    details = _grading_details(trial_dir)
+    details = grading_details(trial_dir)
     check_names, rubric_names = _evaluator_names(trial_dir, result)
     final_value = float(rewards["reward"])
     scores = [
@@ -391,6 +392,7 @@ def _score_specs(
                 metadata={
                     "source": "o11y-bench",
                     "criterion": name,
+                    "outcome": str(details.get(f"outcome:{name}") or ""),
                     "evaluator_runtime": "harbor-verifier",
                     "declared_in_suite": name in check_names or name in rubric_names,
                 },
@@ -433,15 +435,6 @@ def _evaluator_names(trial_dir: Path, result: dict[str, Any]) -> tuple[set[str],
         if isinstance(item, dict) and item.get("criterion")
     }
     return checks, rubrics
-
-
-def _grading_details(trial_dir: Path) -> dict[str, Any]:
-    path = trial_dir / "verifier" / "grading_details.json"
-    try:
-        payload = json.loads(path.read_text())
-    except OSError, json.JSONDecodeError:
-        return {}
-    return payload if isinstance(payload, dict) else {}
 
 
 def _overall_explanation(details: dict[str, Any]) -> str:

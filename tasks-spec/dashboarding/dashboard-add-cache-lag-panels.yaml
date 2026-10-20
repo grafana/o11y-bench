@@ -89,10 +89,6 @@ checks:
       execute_cases:
       - result_kind: prometheus_vector
         canonical_query: service_cache_refresh_lag_seconds{job="user-service"}
-        distinct_label_values:
-        - name: job
-          values_exact:
-          - user-service
   name: Cache lag panels use the saved user-service cache lag metric over the dashboard time range
 - weight: 20
   type: state
@@ -138,3 +134,13 @@ checks:
 rubric:
 - criterion: The final response explains that the saved dashboard now surfaces peak cache lag, lag over time, cache refresh warning logs, and the user-service deployment marker without claiming unrelated board changes
   weight: 10
+  fact:
+    kind: resource
+    resource: dashboard_diff
+    uid: user-access-overview
+- criterion: Panels were added, and the existing User Request Rate and User P95 Latency panels were not modified or removed, and no dashboard setting other than the annotations changed. An unchanged dashboard fails
+  weight: 15
+  fact:
+    kind: resource
+    resource: dashboard_diff
+    uid: user-access-overview

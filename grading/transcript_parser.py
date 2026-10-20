@@ -25,7 +25,23 @@ def parse_claude_code_jsonl(log_path: Path) -> Transcript:
             messages.append(Message(role="system", content=event.get("message", "")))
 
         elif event_type == "user":
-            messages.append(Message(role="user", content=event.get("message", "")))
+            message = event.get("message", "")
+            content = message.get("content", "") if isinstance(message, dict) else message
+            if isinstance(content, list):
+                results = [
+                    ToolResult(
+                        tool_call_id=block.get("tool_use_id", ""),
+                        content=_text_content(block.get("content", "")),
+                        is_error=bool(block.get("is_error")),
+                    )
+                    for block in content
+                    if isinstance(block, dict) and block.get("type") == "tool_result"
+                ]
+                if results:
+                    messages.append(Message(role="tool", tool_results=results))
+                    continue
+                content = _text_content(content)
+            messages.append(Message(role="user", content=str(content)))
 
         elif event_type == "assistant":
             msg = event.get("message", {})
@@ -62,39 +78,33 @@ def parse_claude_code_jsonl(log_path: Path) -> Transcript:
             result_msg = event.get("result", "")
             if result_msg:
                 # Check if last message is assistant; if so, append content
-                if messages and messages[-1].role == "assistant" and not messages[-1].content:
-                    messages[-1].content = result_msg
-                else:
+                last = messages[-1] if messages else None
+                if last and last.role == "assistant" and not last.content:
+                    last.content = result_msg
+                elif not (last and last.role == "assistant" and last.content == result_msg):
                     messages.append(Message(role="assistant", content=result_msg))
 
         elif event_type == "tool_result":
             tool_result = ToolResult(
                 tool_call_id=event.get("tool_use_id", ""),
-                content=event.get("content", ""),
+                content=_text_content(event.get("content", "")),
+                is_error=bool(event.get("is_error")),
             )
-            # Handle string or list content
-            content = event.get("content", "")
-            if isinstance(content, list):
-                text_parts = []
-                for part in content:
-                    if isinstance(part, dict) and part.get("type") == "text":
-                        text_parts.append(part.get("text", ""))
-                    elif isinstance(part, str):
-                        text_parts.append(part)
-                tool_result.content = "\n".join(text_parts)
-            elif isinstance(content, str):
-                tool_result.content = content
-            else:
-                tool_result.content = str(content)
-
-            messages.append(
-                Message(
-                    role="tool",
-                    tool_results=[tool_result],
-                )
-            )
+            messages.append(Message(role="tool", tool_results=[tool_result]))
 
     return Transcript(messages=messages)
+
+
+def _text_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            part.get("text", "") if isinstance(part, dict) else str(part)
+            for part in content
+            if isinstance(part, str) or (isinstance(part, dict) and part.get("type") == "text")
+        )
+    return str(content)
 
 
 def _parse_atif_steps(steps: list[dict[str, Any]]) -> list[Message]:
@@ -141,11 +151,17 @@ def _parse_atif_steps(steps: list[dict[str, Any]]) -> list[Message]:
                                         "source_call_id", result.get("tool_call_id", "")
                                     ),
                                     content=str(result.get("content", "")),
+                                    is_error=_result_is_error(result),
                                 )
                             ],
                         )
                     )
     return messages
+
+
+def _result_is_error(result: dict[str, Any]) -> bool:
+    extra = result.get("extra")
+    return bool(result.get("is_error") or (isinstance(extra, dict) and extra.get("is_error")))
 
 
 def parse_atif_trajectory(logs_dir: Path) -> Transcript:
@@ -230,17 +246,4 @@ def parse_transcript(logs_dir: Path) -> Transcript:
         if candidate.exists() and candidate.stat().st_size > 0:
             return parse_claude_code_jsonl(candidate)
 
-    # ATIF or other JSONL files
-    jsonl_files = list(logs_dir.glob("*.jsonl"))
-    if jsonl_files:
-        return parse_atif_trajectory(logs_dir)
-
-    # Fallback: try any text file
-    for f in sorted(logs_dir.iterdir()):
-        if f.is_file() and f.stat().st_size > 0:
-            try:
-                return parse_atif_trajectory(logs_dir)
-            except Exception:
-                pass
-
-    return Transcript(messages=[])
+    return parse_atif_trajectory(logs_dir)

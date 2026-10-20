@@ -1,6 +1,7 @@
 """LangChain-based Harbor agent for o11y-bench."""
 
 from pathlib import Path
+from typing import Any
 
 from harbor.environments.base import BaseEnvironment
 
@@ -15,6 +16,11 @@ RUNNER_SCRIPT = Path(__file__).parent / "langchain_agent_runner.py"
 
 class LangChainO11yBenchAgent(O11yBenchAgent):
     """Alternate o11y-bench agent implemented with a LangChain runner."""
+
+    def __init__(self, *args: Any, no_tools: bool = False, **kwargs: Any) -> None:
+        if no_tools:
+            raise ValueError("The LangChain agent has no tool-less control build.")
+        super().__init__(*args, **kwargs)
 
     @staticmethod
     def name() -> str:

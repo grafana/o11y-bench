@@ -4,11 +4,34 @@ import signal
 import subprocess
 import sys
 import threading
+from pathlib import Path
 from types import FrameType
 
 from .config import DEFAULT_AGENT_IMPORT_PATH, JOB_CONFIG, ROOT, TASKS_DIR, JobSpec
 
 PREFLIGHT_SCRIPT = ROOT / "scripts" / "harbor_preflight.sh"
+
+
+def builtin_prompt_template(spec: JobSpec) -> Path:
+    """Where a built-in agent's prompt template lives, beside the job dir."""
+    return spec.jobs_dir / f"{spec.job_name}.prompt.md"
+
+
+def write_builtin_prompt_template(spec: JobSpec, scenario_time_iso: str) -> None:
+    """Give a built-in agent (Claude Code, OpenCode) the prompt our agent sends, with the
+    scenario clock: trials start hours after the clock is set, so real now is not it."""
+    agents = ROOT / "agents"
+    system = (agents / "system_prompt.txt").read_text().strip()
+    task = (agents / "task_prompt.txt").read_text()
+    path = builtin_prompt_template(spec)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    prompt = f"{system}\n\n" + task.format(current_time=scenario_time_iso, statement="\0")
+    # Harbor renders the file with Jinja: keep our text literal and leave only the instruction.
+    path.write_text(
+        "{% raw %}"
+        + prompt.replace("\0", "{% endraw %}{{ instruction }}{% raw %}")
+        + "{% endraw %}"
+    )
 
 
 def build_command(spec: JobSpec, *, quiet: bool = False) -> list[str]:
@@ -41,6 +64,8 @@ def build_command(spec: JobSpec, *, quiet: bool = False) -> list[str]:
     # reasoning_effort (or "off"), so only pass a real level.
     if spec.reasoning_effort != "off":
         command.extend(["--ak", f"reasoning_effort={spec.reasoning_effort}"])
+    if spec.agent:
+        command.extend(["--ak", f"prompt_template_path={builtin_prompt_template(spec)}"])
     for task_name in spec.task_names:
         command.extend(["--include-task-name", task_name])
     if spec.override_cpus is not None:

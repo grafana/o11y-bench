@@ -1,4 +1,5 @@
 import json
+import math
 import re
 from collections.abc import Callable
 from typing import Any
@@ -58,6 +59,7 @@ def validate_dashboard_execute_case(
         return False, "execute_cases require verifier HTTP context."
 
     datasource_type = dashboard_datasource_type(item).lower()
+    eval_end_unix -= execute_case.eval_offset_sec or 0
     try:
         bindings = resolve_execute_case_bindings(
             execute_case.bindings,
@@ -642,6 +644,9 @@ def render_regex_binding_part(raw: str) -> str:
 
 
 def scalar_matches(actual: float, expected: float, tolerance: float) -> bool:
+    # histogram_quantile over a window with no requests is NaN on both sides.
+    if math.isnan(expected) or math.isnan(actual):
+        return math.isnan(expected) and math.isnan(actual)
     if expected == 0:
         return actual == 0
     return abs(actual - expected) / abs(expected) <= tolerance
@@ -652,15 +657,35 @@ def vector_series_match(
     expected: list[SeriesSample],
     tolerance: float,
 ) -> bool:
-    actual_map = {series_label_key(labels): value for labels, value in actual}
-    expected_map = {series_label_key(labels): value for labels, value in expected}
-    if actual_map.keys() != expected_map.keys():
+    """Match series on the labels both sides carry, so `max by (job) (x)` matches raw `x`.
+
+    A panel query that aggregates away labels the canonical keeps (or keeps `__name__`) is still
+    the same series set. Two series that collapse onto one key make the sets unequal. Series with
+    no labels at all (one `max(x{job="a"})` target per service) can't be told apart, so their
+    values have to match as a set.
+    """
+    if len(actual) != len(expected):
+        return False
+    if len(actual) > 1 and all(not set(labels) - {"__name__"} for labels, _ in actual):
+        return all(
+            scalar_matches(a, e, tolerance)
+            for a, e in zip(
+                sorted(value for _, value in actual),
+                sorted(value for _, value in expected),
+                strict=True,
+            )
+        )
+    labels_seen = (set(labels) - {"__name__"} for labels, _ in actual + expected)
+    shared = set.intersection(*labels_seen) if actual else set()
+    actual_map = {series_label_key(labels, shared): value for labels, value in actual}
+    expected_map = {series_label_key(labels, shared): value for labels, value in expected}
+    if len(actual_map) != len(actual) or actual_map.keys() != expected_map.keys():
         return False
     return all(scalar_matches(actual_map[key], expected_map[key], tolerance) for key in actual_map)
 
 
-def series_label_key(labels: dict[str, str]) -> tuple[tuple[str, str], ...]:
-    return tuple(sorted((str(key), str(value)) for key, value in labels.items()))
+def series_label_key(labels: dict[str, str], only: set[str]) -> tuple[tuple[str, str], ...]:
+    return tuple(sorted((str(k), str(v)) for k, v in labels.items() if k in only))
 
 
 def seconds_to_promql_duration(total_seconds: int) -> str:
@@ -910,8 +935,9 @@ def normalize_promql_macros(query_text: str) -> str:
         .replace("${__range}", "5m")
         .replace("$__interval", "1m")
         .replace("${__interval}", "1m")
-        .replace("$__rate_interval", "1m")
-        .replace("${__rate_interval}", "1m")
+        # Grafana's max(4 x scrape interval, step), at the 30s scrape interval of the generated data.
+        .replace("$__rate_interval", "2m")
+        .replace("${__rate_interval}", "2m")
     )
 
 

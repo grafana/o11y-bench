@@ -158,7 +158,8 @@ class IncidentConfig:
 
         # Deployment event: just before error spike starts
         self.deployment_time = self.error_spike_start - timedelta(minutes=2)
-        self.cache_deployment_time = self.cache_refresh_start - timedelta(minutes=3)
+        # Before the lag's 8-minute warm-up, so the rollout precedes the first lag warning.
+        self.cache_deployment_time = self.cache_refresh_start - timedelta(minutes=10)
 
     def get_error_rate(self, ts: datetime, service: str) -> float:
         """Return error rate for a service at a given time."""
@@ -253,11 +254,22 @@ class IncidentConfig:
 
     def is_deployment_time(self, ts: datetime) -> bool:
         """Check if this timestamp should have deployment log entries."""
-        return abs((ts - self.deployment_time).total_seconds()) < 60
+        # One minute tick, so a rollout logs once per service, not twice.
+        return 0 <= (ts - self.deployment_time).total_seconds() < 60
 
     def is_cache_deployment_time(self, ts: datetime) -> bool:
         """Check if this timestamp should have cache incident deployment entries."""
-        return abs((ts - self.cache_deployment_time).total_seconds()) < 60
+        return 0 <= (ts - self.cache_deployment_time).total_seconds() < 60
+
+
+# Hour, weekday and minute boundaries follow this reference clock, not the scenario clock,
+# so every clock (each run, model arm and regrade) gets the same data relative to it.
+# Changing it changes the data every task is calibrated against.
+REFERENCE_END = datetime(2026, 10, 19, 23, 1, tzinfo=UTC)
+
+
+def reference_time(ts: datetime, end_time: datetime) -> datetime:
+    return REFERENCE_END + (ts - end_time)
 
 
 def get_traffic_multiplier(ts: datetime) -> float:
@@ -311,6 +323,9 @@ def create_otlp_span(
         span["parentSpanId"] = parent_span_id
 
     return span
+
+
+DEPENDENCY_CALL_MAX_NS = 25e6
 
 
 def generate_request_trace(
@@ -430,7 +445,9 @@ def generate_request_trace(
                 service_name=dep_service,
                 operation_name=f"call {dep_service}",
                 start_time_ns=target_start + int(target_duration_ns * 0.2),
-                duration_ns=int(target_duration_ns * 0.5),
+                # A dependency's normal latency: the caller's own slowness stays on the
+                # caller's span, so a slow order-service doesn't make payment-service look slow.
+                duration_ns=int(min(target_duration_ns * 0.5, DEPENDENCY_CALL_MAX_NS)),
                 error=is_error,
                 span_kind=3,  # SPAN_KIND_CLIENT
             )
@@ -702,6 +719,20 @@ def fetch_tempo_search_traces(
     return [item for item in traces if isinstance(item, dict)], ""
 
 
+def fetch_tempo_metrics_series(query: str, start_sec: int, end_sec: int) -> tuple[list[dict], str]:
+    params = urllib.parse.urlencode({"q": query, "start": start_sec, "end": end_sec})
+    url = f"{TEMPO_QUERY_URL}/api/metrics/query?{params}"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            payload = json.load(resp)
+    except Exception as exc:
+        return [], f"Tempo metrics query failed: {exc}"
+    series = payload.get("series")
+    if not isinstance(series, list):
+        return [], "Tempo metrics response missing series list."
+    return [item for item in series if isinstance(item, dict)], ""
+
+
 def _probe_detail(name: str, traces: list[dict], err: str) -> str:
     if traces:
         return f"{name}={len(traces)}"
@@ -709,17 +740,21 @@ def _probe_detail(name: str, traces: list[dict], err: str) -> str:
 
 
 def wait_for_tempo_searchable(
-    end_time: datetime, max_attempts: int = 30, poll_interval: float = 1.0
+    end_time: datetime, max_attempts: int = 120, poll_interval: float = 1.0
 ) -> None:
     # Probes are tracked independently: broad and error searches may become ready
     # on different polls (errors are sparser), and requiring both on the same tick
     # caused spurious failures. Poll interval matches Tempo's blocklist_poll.
+    # TraceQL metrics lag search by about a minute after ingest; graders read them as facts,
+    # so the stack is not ready until they return series too.
     start_sec = int((end_time - timedelta(hours=24)).timestamp())
     end_sec = int(end_time.timestamp())
     broad_traces: list[dict] = []
     broad_err = ""
     error_traces: list[dict] = []
     error_err = ""
+    metrics_series: list[dict] = []
+    metrics_err = ""
 
     for attempt in range(max_attempts):
         attempt_num = attempt + 1
@@ -729,12 +764,17 @@ def wait_for_tempo_searchable(
             error_traces, error_err = fetch_tempo_search_traces(
                 "{ span:status = error }", start_sec, end_sec, limit=5
             )
+        if not metrics_series:
+            metrics_series, metrics_err = fetch_tempo_metrics_series(
+                "{ } | rate()", start_sec, end_sec
+            )
 
-        if broad_traces and error_traces:
+        if broad_traces and error_traces and metrics_series:
             log(
                 "  Tempo search ready "
                 f"(attempt {attempt_num}/{max_attempts}, "
-                f"broad={len(broad_traces)}, error={len(error_traces)})"
+                f"broad={len(broad_traces)}, error={len(error_traces)}, "
+                f"metrics={len(metrics_series)})"
             )
             return
 
@@ -742,6 +782,7 @@ def wait_for_tempo_searchable(
             details = [
                 _probe_detail("broad", broad_traces, broad_err),
                 _probe_detail("error", error_traces, error_err),
+                _probe_detail("metrics", metrics_series, metrics_err),
             ]
             log(
                 "  Waiting for Tempo search "
@@ -752,16 +793,18 @@ def wait_for_tempo_searchable(
     details = [
         _probe_detail("broad", broad_traces, broad_err),
         _probe_detail("error", error_traces, error_err),
+        _probe_detail("metrics", metrics_series, metrics_err),
     ]
     log(f"  Tempo search never became ready after {max_attempts} attempts: {'; '.join(details)}")
     raise RuntimeError("Tempo search never became ready")
 
 
 def data_end_time_utc() -> datetime:
+    # Whole minutes, so samples sit at the same offsets from the epoch-minute steps of
+    # subqueries whatever the clock (o11y_bench/scenario_clock.py).
     raw = os.environ.get("O11Y_SCENARIO_TIME_ISO", "").strip()
-    if not raw:
-        return datetime.now(UTC).replace(microsecond=0)
-    return datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(UTC)
+    end = datetime.fromisoformat(raw.replace("Z", "+00:00")) if raw else datetime.now(UTC)
+    return end.astimezone(UTC).replace(second=0, microsecond=0)
 
 
 def generate_all_data() -> dict[str, ServiceMetrics]:
@@ -816,9 +859,10 @@ def generate_all_data() -> dict[str, ServiceMetrics]:
         buf_size = 0
 
         while current < end_time:
-            traffic = get_traffic_multiplier(current)
+            reference = reference_time(current, end_time)
+            traffic = get_traffic_multiplier(reference)
             ts_epoch = current.timestamp()
-            current_minute = int(ts_epoch) // 60
+            current_minute = int(reference.timestamp()) // 60
 
             # Generate requests/logs/traces once per minute
             if current_minute != last_minute:

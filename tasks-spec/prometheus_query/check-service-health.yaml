@@ -18,17 +18,17 @@ rubric:
     kind: query
     backend: prometheus
     query: sum(up)
-- criterion: The final response states Worst backend 5xx share accurately.
+- criterion: The final response states the worst backend 5xx share within 5% of the truth.
   weight: 20
   fact:
     kind: query
     backend: prometheus
     query: max((sum by (job) (rate(http_requests_total{status=~"5..",job=~"user-service|order-service|payment-service"}[6h]))) / (sum by (job) (rate(http_requests_total{job=~"user-service|order-service|payment-service"}[6h]))))
-- criterion: The transcript shows Prometheus evidence for both current scrape health and backend 6h HTTP 5xx activity rather than only one side of the check
-  weight: 20
-- criterion: The final response identifies which monitored targets are up and names the backend jobs that still show 6h HTTP 5xx activity in worst-to-better order, consistent with the transcript's Prometheus evidence
+- criterion: The final response names the backend jobs with HTTP 5xx in the 6h view in worst-to-better order of 5xx share, as ranked in the Source of truth.
   weight: 30
-- criterion: The final response distinguishes scrape health from application health instead of treating up targets as sufficient proof that the backend fleet is healthy
-  weight: 10
+  fact:
+    kind: query
+    backend: prometheus
+    query: sort_desc(sum by (job) (rate(http_requests_total{status=~"5..",job=~"user-service|order-service|payment-service"}[6h])) / sum by (job) (rate(http_requests_total{job=~"user-service|order-service|payment-service"}[6h])))
 - criterion: The final response says whether things look truly healthy or not after factoring in both target status and backend 5xx evidence
   weight: 10

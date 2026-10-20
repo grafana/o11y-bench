@@ -10,17 +10,19 @@ statement: |
   to smallest, and say whether memory looks like a strong lead or a weak one.
 checks: []
 rubric:
-- criterion: The final response states Average total resident memory roughly accurately.
+- criterion: The final response states the average total resident memory within 5% of the truth.
   weight: 40
   fact:
     kind: query
     backend: prometheus
     query: sum(avg_over_time(process_resident_memory_bytes{job=~".+"}[6h]))
-- criterion: The transcript shows Prometheus evidence for both the fleet-wide memory footprint and the per-job ranking over roughly the same 6h window
-  weight: 15.0
 - criterion: The response provides a clear summary of memory usage with appropriate units (bytes, MB, GB)
   weight: 5.0
-- criterion: The final response ranks the three heaviest jobs from biggest to smallest in a way that is consistent with the transcript's Prometheus evidence
+- criterion: The final response ranks the three heaviest jobs from biggest to smallest in the order of the Source of truth. Jobs within 2% of each other in the Source of truth are tied, so any order among them is right, and the response says when the leaders are that close instead of presenting one as a clear winner.
   weight: 25.0
+  fact:
+    kind: query
+    backend: prometheus
+    query: sort_desc(sum by (job) (avg_over_time(process_resident_memory_bytes{job=~".+"}[6h])))
 - criterion: The final response interprets whether memory looks like a strong incident lead or a weak one, not only the raw footprint
   weight: 20.0

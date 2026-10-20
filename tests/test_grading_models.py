@@ -1,59 +1,60 @@
-import importlib.util
-import sys
-import uuid
-from pathlib import Path
+import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-GRADING_DIR = ROOT / "grading"
+from grading.models import Message, ToolCall, ToolResult, Transcript
+
+REPORT = "Root cause: payment-service connection pool exhausted. " * 5
 
 
-def load_grading_module(module_name: str):
-    path = GRADING_DIR / f"{module_name}.py"
-    sys.path.insert(0, str(GRADING_DIR))
-    try:
-        unique_name = f"test_{module_name}_{uuid.uuid4().hex}"
-        spec = importlib.util.spec_from_file_location(unique_name, path)
-        if spec is None or spec.loader is None:
-            raise RuntimeError(f"Could not load module from {path}")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[unique_name] = module
-        spec.loader.exec_module(module)
-        return module
-    finally:
-        sys.path.pop(0)
+@pytest.mark.parametrize(
+    ("messages", "final_answer"),
+    [
+        pytest.param(
+            [
+                Message("user", "q"),
+                Message("assistant", "Let me search.", [ToolCall("a", "s", {})]),
+            ],
+            "",
+            id="a planning turn with tool calls is not an answer",
+        ),
+        pytest.param(
+            [Message("user", "q"), Message("assistant", REPORT), Message("assistant", "Done.")],
+            REPORT.strip() + "\n\nDone.",
+            id="a closing note joins the report",
+        ),
+        pytest.param(
+            [Message("user", "q"), Message("assistant", REPORT), Message("user", "and now?")],
+            "",
+            id="a later user message ends the answer",
+        ),
+    ],
+)
+def test_final_answer_is_the_closing_text_without_tool_calls(
+    messages: list[Message], final_answer: str
+) -> None:
+    transcript = Transcript(messages)
+
+    assert transcript.final_answer() == final_answer
+    # The judge is told where the answer is only when there is one.
+    assert ("Agent (final response)" in transcript.to_text()) == bool(final_answer)
 
 
-def test_transcript_to_text_respects_budget_and_keeps_key_context() -> None:
-    models = load_grading_module("models")
-    transcript = models.Transcript(
-        messages=[
-            models.Message(role="user", content="Investigate the checkout service failure."),
-            models.Message(
-                role="assistant",
-                content="Working through logs and traces." + " detail" * 500,
-                thinking_content="reasoning" * 300,
-                tool_calls=[
-                    models.ToolCall(
-                        id="tool-1",
-                        name="query_logs",
-                        arguments={"query": "error" * 200},
-                    )
-                ],
-            ),
-            models.Message(
-                role="tool",
-                tool_results=[
-                    models.ToolResult(
-                        tool_call_id="tool-1",
-                        content="log-line" * 1000,
-                    )
-                ],
-            ),
-        ]
+def test_a_long_investigation_is_trimmed_but_keeps_what_the_judge_needs() -> None:
+    messages = [Message("user", "Investigate the checkout service failure.")]
+    for i in range(40):
+        call = ToolCall(f"t{i}", "query_logs", {"query": "error" * 1000})
+        messages.append(Message("assistant", f"step {i} " + "detail " * 200, tool_calls=[call]))
+        messages.append(
+            Message("tool", tool_results=[ToolResult(f"t{i}", f"log-line-{i} " * 1000)])
+        )
+    messages.append(Message("assistant", "The checkout failure is caused by payment timeouts."))
+
+    text = Transcript(messages).to_text()
+
+    # The raw transcript is over 650k characters.
+    assert len(text) < 150_000
+    assert text.startswith("User: Investigate the checkout service failure.")
+    assert "step 0 detail" in text
+    assert "log-line-39" in text and "log-line-0 " not in text
+    assert text.endswith(
+        "Agent (final response): The checkout failure is caused by payment timeouts."
     )
-
-    rendered = transcript.to_text(max_chars=500)
-
-    assert len(rendered) <= 500
-    assert "Investigate the checkout service failure." in rendered
-    assert "query_logs" in rendered

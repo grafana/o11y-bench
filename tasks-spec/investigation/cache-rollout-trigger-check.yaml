@@ -27,7 +27,5 @@ rubric:
     query: sum(count_over_time({job="user-service",level="warn"} | json | __error__="" | job_name="auth-cache-refresh" [12h]))
 - criterion: The final response identifies the `user-service v2.5.0` rollout as the relevant deployment event and frames it as a plausible trigger for the cache warnings rather than saying the logs show no deployment tie-in
   weight: 15
-- criterion: The final response ties the causal claim to both the deployment evidence and the subsequent cache-refresh warning pattern, not only one of them
-  weight: 15
-- criterion: The response keeps the scope on the user-service cache incident rather than drifting into the separate payment/order incident narratives
+- criterion: The final response rests its causal verdict on the user-service deployment and cache-warning logs. Ruling out other services (no deploys or cache warnings there) is fine; attributing the cache warnings to another service's incident is not
   weight: 10

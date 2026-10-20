@@ -1,7 +1,9 @@
 """Verifier HTTP context: Grafana, Prometheus, Loki, Tempo (same stack as the agent)."""
 
+import base64
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -99,8 +101,6 @@ def _instant_query_payload(
 
 def _normalize_instant_query_payload(
     payload: dict[str, Any],
-    *,
-    empty_vector_is_zero: bool = False,
 ) -> tuple[dict[str, Any] | None, str]:
     if payload.get("status") != "success":
         return None, f"Query not successful: {payload.get('error', payload)}"
@@ -118,8 +118,6 @@ def _normalize_instant_query_payload(
             return None, "Could not parse scalar result."
 
     if result_type == "vector" and isinstance(result, list):
-        if empty_vector_is_zero and len(result) == 0:
-            return {"shape": "scalar", "value": 0.0}, ""
         items: list[dict[str, Any]] = []
         for item in result:
             if not isinstance(item, dict):
@@ -160,7 +158,7 @@ def _normalize_loki_range_payload(payload: dict[str, Any]) -> tuple[dict[str, An
     if not isinstance(result, list):
         return None, "Loki matrix result missing."
     if not result:
-        return {"shape": "scalar", "value": 0.0}, ""
+        return {"shape": "scalar", "value": 0.0, "empty": True}, ""
 
     items: list[dict[str, Any]] = []
     for series in result:
@@ -187,7 +185,7 @@ def _normalize_loki_range_payload(payload: dict[str, Any]) -> tuple[dict[str, An
         )
 
     if not items:
-        return {"shape": "scalar", "value": 0.0}, ""
+        return {"shape": "scalar", "value": 0.0, "empty": True}, ""
     if len(items) == 1 and not items[0]["labels"]:
         return {"shape": "scalar", "value": items[0]["value"]}, ""
     return {"shape": "items", "items": items}, ""
@@ -473,6 +471,59 @@ def fetch_tempo_search_traces(
     return [item for item in traces if isinstance(item, dict)], ""
 
 
+def fetch_tempo_metrics_instant(
+    base_url: str,
+    query: str,
+    timeout_sec: float,
+    start_sec: int,
+    end_sec: int,
+) -> tuple[list[dict[str, Any]], str]:
+    """Evaluate a TraceQL metrics query once over [start, end]: one value per series.
+
+    Returns items shaped like Prometheus vector items: {"labels": {...}, "value": float}.
+    """
+    if not base_url:
+        return [], "TEMPO_URL is not set."
+    params = {"q": query, "start": str(int(start_sec)), "end": str(int(end_sec))}
+    url = f"{base_url}/api/metrics/query?{urlencode(params)}"
+    try:
+        payload = http_get_json(url, timeout_sec)
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode(errors="replace")[:500] if exc.fp else ""
+        return [], f"Tempo metrics HTTP {exc.code}: {body or exc.reason}"
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        return [], f"Tempo metrics query failed: {exc}"
+    if not isinstance(payload, dict) or not isinstance(payload.get("series"), list):
+        return [], "Tempo metrics response missing series list."
+    items: list[dict[str, Any]] = []
+    for series in payload["series"]:
+        if not isinstance(series, dict):
+            continue
+        try:
+            sample = float(series["value"])
+        except KeyError, TypeError, ValueError:
+            continue
+        labels: dict[str, str] = {}
+        for label in series.get("labels") or []:
+            if isinstance(label, dict) and isinstance(label.get("value"), dict):
+                labels[str(label.get("key"))] = str(next(iter(label["value"].values()), ""))
+        items.append({"labels": labels, "value": sample})
+    return items, ""
+
+
+def fetch_grafana_api(base_url: str, path: str, timeout_sec: float) -> tuple[Any, str, int]:
+    """GET a Grafana API path. Returns (payload, error, HTTP status or 0 on transport failure)."""
+    if not base_url:
+        return None, "GRAFANA_URL is not set.", 0
+    try:
+        return http_get_json(f"{base_url}{path}", timeout_sec), "", 200
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode(errors="replace")[:300] if exc.fp else ""
+        return None, f"Grafana API GET {path} HTTP {exc.code}: {body or exc.reason}", exc.code
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        return None, f"Grafana API GET {path} failed: {exc}", 0
+
+
 def fetch_tempo_attribute_values(
     base_url: str,
     attribute: str,
@@ -548,6 +599,87 @@ def fetch_tempo_search_trace_ids(
         if tid:
             ids.append(str(tid))
     return ids, ""
+
+
+def _otlp_id_hex(raw: Any) -> str:
+    """OTLP JSON from Tempo carries span and trace IDs base64-encoded; hex passes through."""
+    text = str(raw or "")
+    if re.fullmatch(r"[0-9a-fA-F]{16}|[0-9a-fA-F]{32}", text):
+        return text.lower()
+    try:
+        return base64.b64decode(text).hex()
+    except ValueError:
+        return text
+
+
+def fetch_tempo_trace(
+    base_url: str, trace_id: str, timeout_sec: float
+) -> tuple[list[dict[str, Any]], str]:
+    """Every span of one trace from GET /api/v2/traces/<id>, flattened. [] when Tempo lacks it."""
+    if not base_url:
+        return [], "TEMPO_URL is not set."
+    try:
+        payload = http_get_json(f"{base_url}/api/v2/traces/{trace_id}", timeout_sec)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return [], ""
+        return [], f"Tempo trace HTTP {exc.code}: {exc.reason}"
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        return [], f"Tempo trace lookup failed: {exc}"
+    trace = payload.get("trace") if isinstance(payload, dict) else None
+    spans: list[dict[str, Any]] = []
+    for resource_spans in (trace or {}).get("resourceSpans") or []:
+        attrs = (resource_spans.get("resource") or {}).get("attributes") or []
+        service = next(
+            (a["value"].get("stringValue") for a in attrs if a.get("key") == "service.name"), ""
+        )
+        for scope_spans in resource_spans.get("scopeSpans") or []:
+            for span in scope_spans.get("spans") or []:
+                attributes = {
+                    a.get("key"): next(iter((a.get("value") or {}).values()), None)
+                    for a in span.get("attributes") or []
+                }
+                spans.append(
+                    {
+                        "span_id": _otlp_id_hex(span.get("spanId")),
+                        "parent_id": _otlp_id_hex(span.get("parentSpanId")),
+                        "service": service,
+                        "name": span.get("name", ""),
+                        "kind": str(span.get("kind", "")).removeprefix("SPAN_KIND_").lower(),
+                        "start_ns": int(span.get("startTimeUnixNano") or 0),
+                        "end_ns": int(span.get("endTimeUnixNano") or 0),
+                        "error": (span.get("status") or {}).get("code") in (2, "STATUS_CODE_ERROR"),
+                        "http_status": attributes.get("http.status_code"),
+                    }
+                )
+    return spans, ""
+
+
+def find_trace_example(
+    base_url: str, trace_ids: list[str], match: str, lookback_hours: float, timeout_sec: float
+) -> tuple[str | None, list[str], str]:
+    """The first cited trace that is in Tempo and matches `match`, with why each one before it
+    fell short ("<id> (does not match)", "<id> (not in Tempo)")."""
+    start_sec, end_sec = default_tempo_search_window_sec(lookback_hours)
+
+    def found(query: str) -> tuple[bool, str]:
+        traces, err = fetch_tempo_search_traces(
+            base_url, query, timeout_sec, limit=1, start_sec=start_sec, end_sec=end_sec
+        )
+        return bool(traces), err
+
+    misses: list[str] = []
+    for trace_id in trace_ids:
+        matched, err = found(f'{match} && {{ trace:id = "{trace_id}" }}')
+        if err:
+            return None, misses, err
+        if matched:
+            return trace_id, misses, ""
+        exists, err = found(f'{{ trace:id = "{trace_id}" }}')
+        if err:
+            return None, misses, err
+        misses.append(f"{trace_id} ({'does not match' if exists else 'not in Tempo'})")
+    return None, misses, ""
 
 
 def default_tempo_search_window_sec(lookback_hours: float = 24.0) -> tuple[int, int]:

@@ -248,6 +248,9 @@ def classify_trial_artifact(
     if is_interrupted_trial(trial) or is_missing_reward_trial(trial):
         return "retryable"
 
+    if is_grading_error_trial(trial, trial_dir=trial_dir):
+        return "complete"
+
     if is_invalid_infra_trial(trial, trial_dir=trial_dir):
         return "retryable"
 
@@ -298,6 +301,8 @@ def agent_seconds(trial: JsonDict) -> float:
 
 
 def is_invalid_infra_trial(trial: JsonDict, trial_dir: Path | None = None) -> bool:
+    if is_grading_error_trial(trial, trial_dir=trial_dir):
+        return True
     if is_nonzero_agent_exit_trial(trial):
         if is_agent_step_limit_trial(trial, trial_dir=trial_dir):
             return False
@@ -348,22 +353,51 @@ def variant_key(trial: JsonDict) -> tuple[str, str]:
     return model, trial_reasoning_effort(trial)
 
 
-def rubric_passed(grading: JsonDict) -> bool:
-    scored_criteria: list[float] = []
+GRADING_SUMMARY_KEYS = {
+    "score",
+    "status",
+    "grading_model",
+    "checks_passed",
+    "rubric_passed",
+    "validators_passed",
+    "criteria_passed",
+}
+GRADING_ANNOTATION_PREFIXES = ("explanation:", "outcome:", "quote:")
+
+
+def criterion_scores(grading: JsonDict) -> dict[str, float]:
+    """Per-check and per-criterion scores from grading_details.json."""
+    scores: dict[str, float] = {}
     for key, val in grading.items():
-        if key in (
-            "score",
-            "checks_passed",
-            "rubric_passed",
-            "validators_passed",
-            "criteria_passed",
-        ) or key.startswith("explanation:"):
+        if key in GRADING_SUMMARY_KEYS or key.startswith(GRADING_ANNOTATION_PREFIXES):
             continue
         try:
-            scored_criteria.append(float(val))
+            scores[key] = float(val)
         except TypeError, ValueError:
             continue
+    return scores
 
+
+def grading_details(trial_dir: Path) -> JsonDict:
+    try:
+        payload = json.loads((trial_dir / "verifier" / "grading_details.json").read_text())
+    except OSError, ValueError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def is_grading_error_trial(trial: JsonDict, trial_dir: Path | None = None) -> bool:
+    """The grader could not grade this trial (unreadable truth or judge failure).
+
+    Such trials don't count toward pass rates; `regrade` grades them again without
+    rerunning the agent.
+    """
+    resolved = trial_dir or _trial_dir_from_result_path(trial)
+    return resolved is not None and grading_details(resolved).get("status") == "error"
+
+
+def rubric_passed(grading: JsonDict) -> bool:
+    scored_criteria = list(criterion_scores(grading).values())
     if scored_criteria:
         return all(score >= 1.0 for score in scored_criteria)
 
@@ -465,7 +499,10 @@ def trial_to_row(result: JsonDict, transcript: list[JsonDict] | None = None) -> 
         "n_output_tokens": n_output_tokens,
         "n_cache_tokens": n_cache_tokens,
         "tool_calls": count_tool_calls(transcript) if transcript else 0,
-        "invalid_infra": status != "complete",
+        # A grading error is "complete" for resume (regrade, don't rerun the agent), but
+        # its score is the grader's failure, not the agent's: keep it out of aggregates.
+        "invalid_infra": status != "complete"
+        or is_grading_error_trial(result, trial_dir=trial_dir),
         "counts_as_pass": reward_counts_as_pass(result),
     }
 

@@ -10,18 +10,18 @@ statement: |
   Can you pull a failing POST /api/orders trace from roughly the last day? I'd love a trace id if
   you have one, how the request moved through services, and where it first looks wrong.
 checks:
-- weight: 70
-  type: grounding
+- name: The final response cites a failed POST /api/orders trace by its full ID
+  weight: 10
+  type: state
   params:
-    prefix_min_chars: 8
-    mode: tool_trace_id
-  name: Response cites a trace ID that appears in Tempo tool results
+    mode: cited_trace
+    match: '{ span.http.route = "/api/orders" && status = error }'
 rubric:
-- criterion: The final response points to the first service or span in the chain where the error originates
-  weight: 5.0
-- criterion: The final response ties the analysis to POST /api/orders or checkout flow wording
-  weight: 15.0
-- criterion: The final response explains how the error moves across services (propagation, upstream/downstream, or root vs symptom)
-  weight: 15.0
-- criterion: Any asserted failing service or hop in the final answer appears in trace or tool output in the transcript
-  weight: 15.0
+- criterion: The path through services the final response describes for its example trace matches that trace's parent-child order in the Source of truth
+  weight: 25
+  fact:
+    kind: cited_trace
+- criterion: Where the final response says its example request first failed is that trace's error origin in the Source of truth, named by its operation or its service, and it treats webapp and api-gateway spans as only relaying the failed HTTP response
+  weight: 30
+  fact:
+    kind: cited_trace

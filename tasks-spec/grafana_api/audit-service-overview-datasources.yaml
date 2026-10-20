@@ -54,24 +54,7 @@ setup_dashboards:
 statement: |
   Can you audit the saved "Service Overview Audit" dashboard (`service-overview-audit`) for me?
   I just want a quick panel-by-panel map of which datasource each panel is using.
-checks:
-- weight: 30
-  type: state
-  params:
-    uid: service-overview-audit
-    mode: dashboard_state
-    panel_count: 3
-    panels:
-    - title: Request Rate
-      type: timeseries
-      datasource_type: prometheus
-    - title: Error Logs
-      type: logs
-      datasource_type: loki
-    - title: P95 Latency
-      type: stat
-      datasource_type: prometheus
-  name: Service Overview Audit exists with the expected datasource mix
+checks: []
 rubric:
 - criterion: The final response accurately gives a panel-by-panel mapping from panel title to datasource type
   weight: 50

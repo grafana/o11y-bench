@@ -15,9 +15,10 @@ rubric:
     kind: query
     backend: loki
     query: max(max_over_time({job=~".+"} | json | unwrap duration_ms | __error__="" [6h]))
-- criterion: The final response names the slowest affected route or service and states how slow it got using concrete durations or latency figures
-  weight: 10.0
-- criterion: The response cites concrete request latency (for example a max or typical slow duration in milliseconds or seconds), not only how long the search window was
-  weight: 25.0
-- criterion: The response references an HTTP path
-  weight: 20.0
+- criterion: The final response names the route of the slowest request, as the Source of truth ranks it
+  weight: 20
+  fact:
+    kind: query
+    backend: loki
+    query: topk(1, max by (path) (max_over_time({job=~".+"} | json | unwrap duration_ms | __error__=""
+      [6h])))

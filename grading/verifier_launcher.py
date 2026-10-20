@@ -1,6 +1,6 @@
 # /// script
 # dependencies = [
-#   "anthropic>=0.75.0",
+#   "anthropic>=0.84.0",
 #   "pyyaml>=6.0",
 #   "promql-parser>=0.1.0",
 #   "pydantic>=2.0",

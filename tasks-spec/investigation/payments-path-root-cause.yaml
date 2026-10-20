@@ -10,32 +10,52 @@ statement: |
   Orders are failing, but I need to know whether this is really a payments-path incident or a
   broader backend mess. Using roughly the last six hours of telemetry, tell me which HTTP endpoint
   owns the most true 5xx request failures in the request logs, about how many it generated, and
-  roughly what share of all 5xx request failures that path accounts for. Then use a representative
+  roughly what share of all 5xx request failures that path accounts for. Count each failure once, at
+  the backend service that served it, not again in the webapp and api-gateway logs that relay it. Then use a representative
   trace for that same path to tell me which backend service first fails and give me one trace id
   you actually saw.
 checks:
-- weight: 20
-  type: grounding
+- name: The final response cites a failed POST /api/payments trace by its full ID
+  weight: 10
+  type: state
   params:
-    prefix_min_chars: 8
-    mode: tool_trace_id
-  name: Response cites a trace ID that appears in Tempo tool results
+    mode: cited_trace
+    match: '{ span.http.route = "/api/payments" && status = error }'
+    lookback_hours: 6
 rubric:
 - criterion: The final response states 5xx request-log count for the dominant payments path accurately.
   weight: 30
   fact:
     kind: query
     backend: loki
-    query: sum(count_over_time({job=~"user-service|order-service|payment-service"} | json | __error__="" | path="/api/payments" | status >= 500 [6h]))
+    query: sum(count_over_time({job=~"user-service|order-service|payment-service"} | json | __error__=""
+      | path="/api/payments" | status >= 500 [6h]))
 - criterion: The final response states Payments-path share of all 5xx request logs accurately.
   weight: 25
   fact:
     kind: query
     backend: loki
-    query: sum(count_over_time({job=~"user-service|order-service|payment-service"} | json | __error__="" | path="/api/payments" | status >= 500 [6h])) / sum(count_over_time({job=~"user-service|order-service|payment-service"} | json | __error__="" | status >= 500 [6h]))
-- criterion: The final response identifies `/api/payments` as the endpoint carrying the most true 5xx request failures in the window and ties that claim to log evidence rather than only generic incident wording
-  weight: 10
-- criterion: The final response identifies `payment-service` as the backend where the representative payments-path trace first fails, not merely an upstream relay layer
-  weight: 10
-- criterion: The final response frames the incident as payments-path-centered rather than a generic whole-fleet failure, while still allowing mention of downstream symptoms on other services when supported by the transcript
+    query: sum(count_over_time({job=~"user-service|order-service|payment-service"} | json | __error__=""
+      | path="/api/payments" | status >= 500 [6h])) / sum(count_over_time({job=~"user-service|order-service|payment-service"}
+      | json | __error__="" | status >= 500 [6h]))
+- criterion: The final response says whether the incident is centered on the payments path or broader,
+    and grounds that call in the per-path 5xx counts in the Source of truth (/api/payments leads but carries
+    well under half of them, so either reading is fine when the counts support it)
   weight: 5
+  fact:
+    kind: query
+    backend: loki
+    query: sum by (path) (count_over_time({job=~"user-service|order-service|payment-service"} | json |
+      __error__="" | status >= 500 [6h]))
+- criterion: The final response identifies `/api/payments` as the endpoint with the most true 5xx request
+    failures in the window, as the per-path counts in the Source of truth show
+  weight: 10
+  fact:
+    kind: query
+    backend: loki
+    query: sum by (path) (count_over_time({job=~"user-service|order-service|payment-service"} | json |
+      __error__="" | status >= 500 [6h]))
+- criterion: The backend the final response says first fails in its example payments trace is that trace's error origin in the Source of truth, not an upstream relay
+  weight: 10
+  fact:
+    kind: cited_trace

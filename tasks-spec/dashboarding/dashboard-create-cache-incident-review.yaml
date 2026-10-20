@@ -53,10 +53,6 @@ checks:
       execute_cases:
       - result_kind: prometheus_vector
         canonical_query: service_cache_refresh_lag_seconds{job="user-service"}
-        distinct_label_values:
-        - name: job
-          values_exact:
-          - user-service
     - title: User P95 Latency
       type: timeseries
       datasource_type: prometheus
@@ -105,6 +101,4 @@ checks:
           values_exact:
           - user-service
   name: Cache Incident Review includes the expected warning-log panel and deployment annotation
-rubric:
-- criterion: The final response summarizes the dashboard as a focused review board for the user-service cache incident and does not claim unsupported extra panels or variables
-  weight: 10
+rubric: []

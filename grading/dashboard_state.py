@@ -3,21 +3,15 @@ from typing import Any
 
 from grading.dashboard_queries import validate_dashboard_execute_case, validate_query_semantics
 from grading.dashboard_snapshot import (
-    DashboardSnapshot,
     collect_annotation_query_texts,
     collect_named_values,
     collect_panel_query_texts,
     collect_variable_query_texts,
     dashboard_datasource_type,
     find_named_dashboard_item,
-    line_mentions_all,
     load_dashboard_snapshot,
-    normalize_query_text,
     normalize_token,
     parse_tag_keys,
-    select_panels_for_titles,
-    split_response_lines,
-    strip_markdown_code_fences,
 )
 from grading.env_context import VerifierContext
 from grading.helpers import prometheus_eval_time_unix
@@ -250,45 +244,3 @@ def validate_dashboard_item_common(
             return False, f"{item_kind} execute_case #{index} failed: {explanation}"
 
     return True, ""
-
-
-def summarize_dashboard_panels(
-    snapshot: DashboardSnapshot,
-    panel_titles: list[str],
-    response_text: str,
-) -> tuple[float, str]:
-    panels, error = select_panels_for_titles(snapshot, panel_titles)
-    if error:
-        return 0.0, error
-    if not panels:
-        return 0.0, "Dashboard has no panels to cite."
-
-    summary_lines = split_response_lines(response_text)
-    for panel in panels:
-        title = str(panel.get("title", "")).strip()
-        panel_type = str(panel.get("type", "")).strip()
-        if not title or not panel_type:
-            return 0.0, "Dashboard panel summary requires titled panels with types."
-        if not any(line_mentions_all(line, title, panel_type) for line in summary_lines):
-            return 0.0, f"Response does not pair panel {title!r} with type {panel_type!r}."
-    return 1.0, f"Response cites {len(panels)} dashboard panels with matching titles and types."
-
-
-def response_cites_saved_queries(
-    snapshot: DashboardSnapshot, response_text: str
-) -> tuple[float, str]:
-    normalized_response = normalize_query_text(strip_markdown_code_fences(response_text)).lower()
-    for panel in snapshot.panels:
-        title = str(panel.get("title", "")).strip()
-        if title and normalize_token(title) not in normalize_token(response_text):
-            return 0.0, f"Response does not mention panel title {title!r}."
-
-        queries = [
-            normalize_query_text(query).lower() for query in collect_panel_query_texts(panel)
-        ]
-        queries = [query for query in queries if query]
-        if not queries:
-            return 0.0, f"Panel {title!r} has no saved query text to validate."
-        if not any(query in normalized_response for query in queries):
-            return 0.0, f"Response does not cite the saved query for panel {title!r}."
-    return 1.0, f"Response cites saved queries for {len(snapshot.panels)} dashboard panels."

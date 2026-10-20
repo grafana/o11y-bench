@@ -1,80 +1,224 @@
-# /// script
-# dependencies = [
-#   "anthropic>=0.75.0",
-#   "pyyaml>=6.0",
-#   "promql-parser>=0.1.0",
-#   "pydantic>=2.0",
-# ]
-# ///
 """Standalone verifier for o11y-bench Harbor tasks."""
 
 import argparse
 import json
-import os
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 
 from grading.checks import run_checks
-from grading.env_context import load_verifier_context_from_env
-from grading.judge import build_judge_criteria, evaluate_with_llm
-from grading.models import Problem, Transcript
+from grading.env_context import VerifierContext, load_verifier_context_from_env
+from grading.facts import FactResult, dump_truth, load_truth
+from grading.judge import (
+    Evaluation,
+    JudgeError,
+    build_judge_criteria,
+    evaluate_with_llm,
+    grading_model,
+)
+from grading.models import CheckItem, JudgeCriterion, Problem, Transcript
 from grading.scoring import calculate_score, normalize_weights
 from grading.transcript_parser import parse_transcript
+
+# Why an item passed or failed.
+OUTCOME_PASS = "pass"
+OUTCOME_WRONG = "wrong"
+OUTCOME_NOT_STATED = "not_stated"
+OUTCOME_NO_ANSWER = "no_answer"
+OUTCOME_UNGROUNDED = "ungrounded"
+OUTCOME_ERROR_TRUTH = "error/truth"
+OUTCOME_ERROR_JUDGE = "error/judge"
+OUTCOME_ERROR_CHECK = "error/check"
+
+type Status = Literal["passed", "failed", "error"]
+
+
+@dataclass
+class ItemResult:
+    name: str
+    weight: float
+    score: float
+    outcome: str
+    explanation: str
+    quote: str = ""
+
+    @property
+    def passed(self) -> bool:
+        return self.score >= 1.0
+
+
+@dataclass
+class GradeResult:
+    score: float
+    status: Status
+    model: str
+    checks: list[ItemResult] = field(default_factory=list)
+    rubric: list[ItemResult] = field(default_factory=list)
+    truth: dict[str, FactResult] = field(default_factory=dict)
+
+    @property
+    def items(self) -> list[ItemResult]:
+        return self.checks + self.rubric
+
+    def details(self) -> dict[str, Any]:
+        """grading_details.json: summary keys, then per item `<name>`, `outcome:`, `explanation:`, `quote:`."""
+        details: dict[str, Any] = {
+            "score": self.score,
+            "status": self.status,
+            "grading_model": self.model,
+            "checks_passed": int(all(item.passed for item in self.checks)),
+            "rubric_passed": int(bool(self.items) and all(item.passed for item in self.items)),
+        }
+        for item in self.items:
+            details[item.name] = item.score
+        for item in self.items:
+            details[f"outcome:{item.name}"] = item.outcome
+            details[f"explanation:{item.name}"] = item.explanation
+            if item.quote:
+                details[f"quote:{item.name}"] = item.quote
+        return details
+
+
+QUOTE_NOISE = re.compile("[*`_\"\u201c\u201d'\u2018\u2019]")
+
+
+def _normalize_quote_text(text: str) -> str:
+    return " ".join(QUOTE_NOISE.sub("", text).split()).lower()
+
+
+def quote_in_answer(quote: str, answer: str) -> bool:
+    q = _normalize_quote_text(quote)
+    return bool(q) and q in _normalize_quote_text(answer)
+
+
+def criterion_outcome(criterion: JudgeCriterion, evaluation: Evaluation | None, answer: str) -> str:
+    if criterion.error:
+        return OUTCOME_ERROR_TRUTH
+    if criterion.fails:
+        return OUTCOME_WRONG
+    if evaluation is None:
+        return OUTCOME_ERROR_JUDGE
+    passed = evaluation.score >= 1.0
+    if not answer.strip() and not passed:
+        return OUTCOME_NO_ANSWER
+    if criterion.answer_backed:
+        quote = evaluation.quote.strip()
+        # A quote the answer doesn't contain is flagged even on a pass; the score stands.
+        if quote and not quote_in_answer(quote, answer):
+            return OUTCOME_UNGROUNDED
+        if not quote and not passed:
+            return OUTCOME_NOT_STATED
+    return OUTCOME_PASS if passed else OUTCOME_WRONG
+
+
+def grade_checks(
+    checks: list[CheckItem],
+    transcript: Transcript,
+    ctx: VerifierContext | None,
+    previous: dict[str, Any] | None,
+) -> list[ItemResult]:
+    """Run checks. With `previous` (an offline regrade), checks reuse their saved result."""
+    live = checks if previous is None else []
+    scores, explanations = run_checks(live, transcript, ctx)
+    results: list[ItemResult] = []
+    for check in checks:
+        if check.name in scores:
+            score, explanation = scores[check.name], explanations[check.name]
+            outcome = OUTCOME_PASS if score >= 1.0 else OUTCOME_WRONG
+        elif previous is not None and isinstance(previous.get(check.name), int | float):
+            score = float(previous[check.name])
+            explanation = str(previous.get(f"explanation:{check.name}", ""))
+            outcome = OUTCOME_PASS if score >= 1.0 else OUTCOME_WRONG
+        else:
+            score, explanation = 0.0, "No saved state-check result to reuse offline."
+            outcome = OUTCOME_ERROR_CHECK
+        results.append(ItemResult(check.name, check.weight, score, outcome, explanation))
+    return results
 
 
 def grade(
     problem: Problem,
     transcript: Transcript,
     model: str,
-) -> tuple[float, dict[str, float | int], bool, dict[str, str]]:
-    """Grade a transcript. Returns (score, rewards_dict, checks_passed)."""
-    all_subscores: dict[str, float] = {}
-    all_explanations: dict[str, str] = {}
-    raw_weights: dict[str, float] = {}
+    *,
+    ctx: VerifierContext | None = None,
+    truth: dict[str, FactResult] | None = None,
+    previous: dict[str, Any] | None = None,
+) -> GradeResult:
+    """Grade a transcript.
 
-    # 1. Deterministic checks (free, instant)
-    checks_passed = True
-    ctx = load_verifier_context_from_env()
-    if problem.checks:
-        v_scores, v_explanations = run_checks(problem.checks, transcript, ctx)
-        for v in problem.checks:
-            all_subscores[v.name] = v_scores[v.name]
-            all_explanations[v.name] = v_explanations[v.name]
-            raw_weights[v.name] = v.weight
-            if v_scores[v.name] < 1.0:
-                checks_passed = False
+    Live (default): reads the stack from the environment. Offline (`previous` given): facts
+    come only from `truth` (a saved truth.json) and state checks reuse `previous` results.
+    """
+    offline = previous is not None
+    if ctx is None and not offline:
+        ctx = load_verifier_context_from_env()
+    cache: dict[str, FactResult] = dict(truth or {})
 
-    # 2. LLM rubric
-    judge_criteria = build_judge_criteria(problem, ctx)
-    if judge_criteria:
-        llm_subscores, llm_explanations = evaluate_with_llm(transcript, model, judge_criteria)
-        for criterion in llm_subscores:
-            all_subscores[criterion] = llm_subscores[criterion]
-            all_explanations[criterion] = llm_explanations[criterion]
-        for r in problem.rubric:
-            raw_weights[r.criterion] = r.weight
+    checks = grade_checks(problem.checks, transcript, ctx, previous)
 
-    rubric_passed = (
-        1 if all_subscores and all(score >= 1.0 for score in all_subscores.values()) else 0
-    )
+    answer = transcript.final_answer()
+    criteria = build_judge_criteria(problem, ctx, cache, offline=offline, answer=answer)
+    judged = {index: c for index, c in enumerate(criteria) if not c.error and not c.fails}
+    evaluations: dict[int, Evaluation] = {}
+    judge_error = ""
+    if judged:
+        try:
+            evaluations = evaluate_with_llm(transcript, model, judged)
+        except JudgeError as exc:
+            judge_error = str(exc)
 
-    # 3. Normalize weights and compute score
-    all_weights = normalize_weights(raw_weights)
-    score = calculate_score(all_subscores, all_weights)
+    rubric: list[ItemResult] = []
+    for index, criterion in enumerate(criteria):
+        evaluation = evaluations.get(index)
+        outcome = criterion_outcome(criterion, evaluation, answer)
+        if criterion.error:
+            explanation = f"Could not read the truth: {criterion.error}"
+        elif criterion.fails:
+            explanation = criterion.fails
+        elif evaluation is None:
+            explanation = judge_error or "The judge returned no evaluation for this criterion."
+        else:
+            explanation = evaluation.explanation
+        rubric.append(
+            ItemResult(
+                name=criterion.criterion,
+                weight=criterion.weight,
+                score=evaluation.score if evaluation else 0.0,
+                outcome=outcome,
+                explanation=explanation,
+                quote=evaluation.quote if evaluation else "",
+            )
+        )
 
-    # Build rewards dict for Harbor
-    rewards: dict[str, float | int] = {
-        "score": score,
-        "checks_passed": 1 if checks_passed else 0,
-        "rubric_passed": rubric_passed,
-    }
-    # Add per-criterion subscores
-    for criterion, subscore in all_subscores.items():
-        rewards[criterion] = subscore
+    items = checks + rubric
+    weights = normalize_weights({item.name: item.weight for item in items})
+    score = calculate_score({item.name: item.score for item in items}, weights)
+    status: Status
+    if judge_error or any(item.outcome.startswith("error/") for item in items):
+        status = "error"
+    elif items and all(item.passed for item in items):
+        status = "passed"
+    else:
+        status = "failed"
+    return GradeResult(score, status, model, checks, rubric, cache)
 
-    return score, rewards, checks_passed, all_explanations
+
+def write_outputs(output_dir: Path, result: GradeResult) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "reward.txt").write_text(str(result.score))
+    (output_dir / "grading_details.json").write_text(json.dumps(result.details(), indent=2))
+    (output_dir / "truth.json").write_text(json.dumps(dump_truth(result.truth), indent=2))
+
+
+def read_truth(output_dir: Path) -> dict[str, FactResult] | None:
+    path = output_dir / "truth.json"
+    if not path.exists():
+        return None
+    return load_truth(json.loads(path.read_text()))
 
 
 # ── CLI Entry Point ─────────────────────────────────────────────────────────
@@ -87,42 +231,19 @@ def main() -> None:
     parser.add_argument("--output", required=True, help="Path to verifier output directory")
     args = parser.parse_args()
 
-    problem_path = Path(args.problem)
-    logs_dir = Path(args.logs)
-    output_dir = Path(args.output)
+    problem = Problem(**yaml.safe_load(Path(args.problem).read_text()))
 
-    # Load problem definition
-    with open(problem_path) as f:
-        data = yaml.safe_load(f)
-    problem = Problem(**data)
-
-    # Parse transcript
-    print(f"Parsing transcript from {logs_dir}...")
-    transcript = parse_transcript(logs_dir)
+    print(f"Parsing transcript from {args.logs}...")
+    transcript = parse_transcript(Path(args.logs))
     print(f"  Found {len(transcript.messages)} messages")
 
-    # Grade
-    model = os.getenv("GRADING_MODEL", "claude-haiku-4-5-20251001")
+    model = grading_model()
     print(f"Grading with model={model}...")
+    result = grade(problem, transcript, model)
+    print(f"  Score: {result.score:.2f} ({result.status})")
 
-    score, rewards, checks_passed, explanations = grade(problem, transcript, model)
-
-    print(f"  Score: {score:.2f}")
-    print(f"  Checks passed: {checks_passed}")
-
-    # Write reward.txt — single float, standard Harbor format
-    output_dir.mkdir(parents=True, exist_ok=True)
-    reward_txt = output_dir / "reward.txt"
-    reward_txt.write_text(str(score))
-    print(f"  Wrote {reward_txt}")
-
-    # Write scores + explanations to grading_details.json (flat: "explanation:<criterion>" keys)
-    details: dict[str, Any] = dict(rewards)
-    for criterion, explanation in explanations.items():
-        details[f"explanation:{criterion}"] = explanation
-    details_path = output_dir / "grading_details.json"
-    details_path.write_text(json.dumps(details, indent=2))
-    print(f"  Wrote {details_path}")
+    write_outputs(Path(args.output), result)
+    print(f"  Wrote {args.output}")
 
 
 if __name__ == "__main__":

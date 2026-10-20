@@ -55,43 +55,7 @@ setup_dashboards:
 statement: |
   Someone sent me our "Service Overview" dashboard (`svc-overview`). What is each panel
   actually querying in Grafana right now - the expressions as saved, not what we think they should be.
-checks:
-- weight: 35
-  type: state
-  params:
-    uid: svc-overview
-    mode: dashboard_state
-    panel_count: 3
-    panels:
-    - title: Request Rate
-      type: timeseries
-      datasource_type: prometheus
-      query:
-        language: promql
-        metric_names:
-        - http_requests_total
-        functions:
-        - rate
-    - title: Error Rate
-      type: stat
-      datasource_type: prometheus
-      query:
-        language: promql
-        metric_names:
-        - http_requests_total
-        functions:
-        - rate
-    - title: P95 Latency
-      type: timeseries
-      datasource_type: prometheus
-      query:
-        language: promql
-        metric_names:
-        - http_request_duration_seconds_bucket
-        functions:
-        - histogram_quantile
-        - rate
-  name: Service Overview exists with the expected saved panel/query structure
+checks: []
 rubric:
 - criterion: The final response accurately reports the saved Service Overview queries rather than guessed PromQL
   weight: 50.0

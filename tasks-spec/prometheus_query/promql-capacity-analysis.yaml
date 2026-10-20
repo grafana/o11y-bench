@@ -33,17 +33,19 @@ rubric:
     kind: query
     backend: prometheus
     query: max_over_time(sum(process_resident_memory_bytes)[6h:1m])
-- criterion: The transcript shows Prometheus evidence for both CPU and memory, including a current snapshot and a 6h lookback or peak comparison
-  weight: 12.0
-- criterion: The final response ranks the top two CPU jobs in descending order in a way that is consistent with the transcript's Prometheus evidence
+- criterion: The final response ranks the top two jobs by CPU in the order of the Source of truth. Jobs within 2% of each other in the Source of truth are tied, so either order among them is right.
   weight: 16.0
-- criterion: The final response ranks the top two resident-memory jobs in descending order in a way that is consistent with the transcript's Prometheus evidence
+  fact:
+    kind: query
+    backend: prometheus
+    query: topk(2, sum by (job) (rate(process_cpu_seconds_total[1h])))
+- criterion: The final response ranks the top two jobs by resident memory in the order of the Source of truth. Jobs within 2% of each other in the Source of truth are tied, so either order among them is right.
   weight: 14.0
-- criterion: The final response interprets what the numbers mean for headroom or risk (for example which jobs look tight or comfortable), not only pastes raw figures - answer YES if any clear judgment appears, regardless of exact adjectives
+  fact:
+    kind: query
+    backend: prometheus
+    query: topk(2, sum by (job) (process_resident_memory_bytes))
+- criterion: The final response interprets what the numbers mean for headroom or risk (for example which jobs look tight or comfortable), not only pastes raw figures
   weight: 15.0
-- criterion: The final response discusses CPU or memory capacity in plain language (usage, headroom, saturation, risk, scaling, or similar)
-  weight: 18.0
 - criterion: The final response compares current memory against the 6h peak rather than treating the current snapshot as the whole story
   weight: 12.0
-- criterion: Any strong scaling or outage-risk claim in the final answer is supported by Prometheus or metrics tool output in the transcript
-  weight: 15.0

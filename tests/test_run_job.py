@@ -2,11 +2,17 @@ import argparse
 import dataclasses
 import json
 import sys
-from contextlib import nullcontext
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
+from harbor.utils.templating import render_prompt_template
 
+from grading.env_context import VerifierContext
+from grading.verifier import GradeResult, ItemResult
 from o11y_bench import cli, config, harbor, run
 
 
@@ -40,6 +46,29 @@ def test_build_command_produces_valid_harbor_invocation() -> None:
     assert _option_values(custom, "--agent") == ["pkg.mod:MyAgent"]
     builtin = harbor.build_command(dataclasses.replace(spec, agent="opencode"))
     assert _option_values(builtin, "--agent") == ["opencode"]
+
+
+def test_builtin_agent_prompt_carries_the_scenario_clock(tmp_path: Path) -> None:
+    spec = config.JobSpec(
+        jobs_dir=tmp_path,
+        job_name="cc-job",
+        tasks_dir=config.TASKS_DIR,
+        model="anthropic/claude-haiku-5-5",
+        reasoning_effort="medium",
+        n_attempts=1,
+        n_concurrent=1,
+        agent="claude-code",
+    )
+    harbor.write_builtin_prompt_template(spec, "2026-10-20T12:22:00Z")
+    (template,) = [
+        v.removeprefix("prompt_template_path=")
+        for v in _option_values(harbor.build_command(spec), "--ak")
+        if v.startswith("prompt_template_path=")
+    ]
+    # Rendered the way Harbor renders it for the agent.
+    prompt = render_prompt_template(Path(template), "Which service is slow?")
+    assert "Current time: 2026-10-20T12:22:00Z" in prompt
+    assert prompt.rstrip().endswith("Which service is slow?")
 
 
 def test_build_command_maps_task_filters_to_harbor_include_task_name() -> None:
@@ -506,6 +535,56 @@ def test_cmd_job_rejects_agent_and_agent_import_path_together() -> None:
         cli._cmd_job(args)
 
 
+def _passing_grade() -> GradeResult:
+    return GradeResult(
+        score=1.0,
+        status="passed",
+        model="judge",
+        rubric=[ItemResult("The final response is accurate.", 1.0, 1.0, "pass", "looks good")],
+    )
+
+
+@pytest.mark.parametrize(
+    ("fact", "boots_stack"),
+    [
+        pytest.param("{kind: query, backend: prometheus, query: up}", True, id="telemetry"),
+        pytest.param("{kind: resource, resource: dashboard, title: Mine}", False, id="saved-state"),
+    ],
+)
+def test_a_live_regrade_never_grades_what_the_agent_left_behind_on_a_fresh_stack(
+    monkeypatch, tmp_path, fact: str, boots_stack: bool
+) -> None:
+    tests = tmp_path / "tasks" / "demo-task" / "tests"
+    tests.mkdir(parents=True)
+    (tests / "problem.yaml").write_text(
+        f"id: demo-task\ncategory: x\nstatement: x\nrubric:\n"
+        f"- criterion: c\n  weight: 1\n  fact: {fact}\n"
+    )
+    job_dir = tmp_path / "job"
+    trial_dir = job_dir / "demo-task__abc"
+    (trial_dir / "agent").mkdir(parents=True)
+    (job_dir / "config.json").write_text("{}")
+    (trial_dir / "result.json").write_text(json.dumps({"task_name": "demo-task"}))
+    stacks: list[Path] = []
+
+    @contextmanager
+    def stack(**kwargs: Any) -> Iterator[Any]:
+        stacks.append(kwargs["task_dir"])
+        yield object()
+
+    monkeypatch.setattr(run, "running_regrade_stack", stack)
+    monkeypatch.setattr(run, "parse_transcript", lambda logs_dir: object())
+    monkeypatch.setattr(run, "grade", lambda *a, **k: _passing_grade())
+    monkeypatch.setattr(run, "finalize_job_dir", lambda *a: None)
+
+    run.regrade_job_dir(job_dir, tasks_dir=tmp_path / "tasks", task_checksums={}, quiet=True)
+
+    assert bool(stacks) == boots_stack
+    skipped = json.loads((job_dir / "regrade.json").read_text())["skipped"]
+    # Saved-state tasks regrade from their saved truths, which this trial does not have.
+    assert [row["reason"] for row in skipped] == ([] if boots_stack else ["no verifier/truth.json"])
+
+
 def test_regrade_job_dir_updates_verifier_outputs(monkeypatch, tmp_path) -> None:
     tasks_dir = tmp_path / "tasks"
     problem_dir = tasks_dir / "demo-task" / "tests"
@@ -543,17 +622,7 @@ def test_regrade_job_dir_updates_verifier_outputs(monkeypatch, tmp_path) -> None
     monkeypatch.setattr(
         run,
         "grade",
-        lambda problem, transcript, model: (
-            1.0,
-            {
-                "score": 1.0,
-                "checks_passed": 1,
-                "rubric_passed": 1,
-                "The final response is accurate.": 1.0,
-            },
-            True,
-            {"The final response is accurate.": "looks good"},
-        ),
+        lambda problem, transcript, model, **kwargs: _passing_grade(),
     )
     monkeypatch.setattr(
         run,
@@ -577,75 +646,97 @@ def test_regrade_job_dir_updates_verifier_outputs(monkeypatch, tmp_path) -> None
     assert result["verifier_result"]["rewards"]["reward"] == 1.0
 
 
-def test_regrade_job_dir_reuses_live_stack_once_per_task(monkeypatch, tmp_path) -> None:
+def test_concurrent_regrade_grades_each_task_on_its_own_stack(monkeypatch, tmp_path) -> None:
+    # One stack per task, reused by its trials; with tasks in flight at once, a trial must
+    # still read its own task's stack and never another's.
     tasks_dir = tmp_path / "tasks"
-    task_dir = tasks_dir / "demo-task"
-    problem_dir = task_dir / "tests"
-    problem_dir.mkdir(parents=True)
-    (task_dir / "environment").mkdir()
-    (task_dir / "environment" / "setup.json").write_text("{}\n")
-    problem_dir.joinpath("problem.yaml").write_text(
-        "\n".join(
-            [
-                "id: demo-task",
-                "category: prometheus_query",
-                "statement: demo",
-                "checks: []",
-                "rubric:",
-                "- criterion: The final response is accurate.",
-                "  weight: 1.0",
-                "  fact:",
-                "    kind: query",
-                "    backend: prometheus",
-                "    query: up",
-            ]
-        )
-        + "\n"
-    )
-
     job_dir = tmp_path / "job"
     job_dir.mkdir()
     (job_dir / "config.json").write_text(json.dumps({"agents": [{"model_name": "test-model"}]}))
+    for task in ("task-a", "task-b"):
+        (tasks_dir / task / "tests").mkdir(parents=True)
+        (tasks_dir / task / "tests" / "problem.yaml").write_text(
+            f"id: {task}\ncategory: prometheus_query\nstatement: demo\nrubric:\n"
+            "- criterion: The final response is accurate.\n  weight: 1.0\n  fact:\n"
+            "    kind: query\n    backend: prometheus\n    query: up\n"
+        )
+        for suffix in ("1", "2"):
+            trial_dir = job_dir / f"{task}__{suffix}"
+            (trial_dir / "agent").mkdir(parents=True)
+            (trial_dir / "result.json").write_text(json.dumps({"task_name": task}) + "\n")
 
-    for suffix in ("abc123", "def456"):
-        trial_dir = job_dir / f"demo-task__{suffix}"
-        (trial_dir / "agent").mkdir(parents=True)
-        (trial_dir / "result.json").write_text(json.dumps({"task_name": "demo-task"}) + "\n")
+    stacks: list[str] = []
 
-    stack_calls: list[tuple[str, str]] = []
+    @contextmanager
+    def fake_stack(*, task_dir, trial_dir, scenario_time_iso):
+        stacks.append(task_dir.name)
+        yield VerifierContext(prometheus_url=f"http://{task_dir.name}")
 
-    def fake_running_regrade_stack(*, task_dir, trial_dir, scenario_time_iso):
-        stack_calls.append((task_dir.name, trial_dir.name))
-        return nullcontext()
+    graded: list[tuple[str, str]] = []
+
+    def fake_grade(problem, transcript, model, **kwargs):
+        graded.append((problem.id, kwargs["ctx"].prometheus_url))
+        return _passing_grade()
 
     monkeypatch.setattr(run, "parse_transcript", lambda logs_dir: object())
-    monkeypatch.setattr(
-        run,
-        "grade",
-        lambda problem, transcript, model: (
-            1.0,
-            {
-                "score": 1.0,
-                "checks_passed": 0,
-                "rubric_passed": 1,
-                "The final response is accurate.": 1.0,
-            },
-            True,
-            {"The final response is accurate.": "looks good"},
-        ),
+    monkeypatch.setattr(run, "grade", fake_grade)
+    monkeypatch.setattr(run, "running_regrade_stack", fake_stack)
+    monkeypatch.setattr(run, "finalize_job_dir", lambda *args: None)
+
+    run.regrade_job_dir(job_dir, tasks_dir=tasks_dir, task_checksums={}, quiet=True, n_concurrent=2)
+
+    assert sorted(stacks) == ["task-a", "task-b"]
+    assert sorted(graded) == [("task-a", "http://task-a")] * 2 + [("task-b", "http://task-b")] * 2
+
+
+def test_offline_regrade_uses_saved_truth_and_skips_trials_without_it(
+    monkeypatch, tmp_path
+) -> None:
+    tasks_dir = tmp_path / "tasks"
+    problem_dir = tasks_dir / "demo-task" / "tests"
+    problem_dir.mkdir(parents=True)
+    problem_dir.joinpath("problem.yaml").write_text(
+        "id: demo-task\ncategory: prometheus_query\nstatement: demo\nrubric:\n"
+        "- criterion: The final response is accurate.\n  weight: 1.0\n  fact:\n"
+        "    kind: query\n    backend: prometheus\n    query: up\n"
     )
-    monkeypatch.setattr(run, "running_regrade_stack", fake_running_regrade_stack)
-    monkeypatch.setattr(
-        run,
-        "finalize_job_dir",
-        lambda job_dir, tasks_dir, task_checksums: job_dir / "run_report.html",
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+    (job_dir / "config.json").write_text("{}")
+    for suffix in ("saved", "unsaved"):
+        trial_dir = job_dir / f"demo-task__{suffix}"
+        (trial_dir / "agent").mkdir(parents=True)
+        (trial_dir / "verifier").mkdir()
+        (trial_dir / "result.json").write_text(json.dumps({"task_name": "demo-task"}))
+        (trial_dir / "verifier" / "grading_details.json").write_text(
+            json.dumps({"The final response is accurate.": 0.0})
+        )
+    (job_dir / "demo-task__saved" / "verifier" / "truth.json").write_text(
+        json.dumps([{"key": "k", "summary": "Query returned 1 result: 1", "debug": {}}])
     )
 
-    run.regrade_job_dir(
-        job_dir,
-        tasks_dir=tasks_dir,
-        task_checksums={"demo-task": "checksum-123"},
-        quiet=True,
-    )
+    calls: list[dict] = []
 
-    assert stack_calls == [("demo-task", "demo-task__abc123")]
+    def fake_grade(problem, transcript, model, **kwargs):
+        calls.append(kwargs)
+        return _passing_grade()
+
+    def no_stack(**kwargs):
+        raise AssertionError("offline regrade must not start a stack")
+
+    monkeypatch.setattr(run, "parse_transcript", lambda logs_dir: object())
+    monkeypatch.setattr(run, "grade", fake_grade)
+    monkeypatch.setattr(run, "running_regrade_stack", no_stack)
+    monkeypatch.setattr(run, "finalize_job_dir", lambda *args: None)
+
+    run.regrade_job_dir(job_dir, tasks_dir=tasks_dir, task_checksums={}, quiet=True, offline=True)
+
+    assert len(calls) == 1
+    assert set(calls[0]["truth"]) == {"k"}
+    assert calls[0]["previous"] == {"The final response is accurate.": 0.0}
+    regrade = json.loads((job_dir / "regrade.json").read_text())
+    assert regrade["skipped"] == [
+        {"trial": "demo-task__unsaved", "reason": "no verifier/truth.json"}
+    ]
+    assert regrade["rows"][0]["before"] == 0.0
+    assert regrade["rows"][0]["after"] == 1.0

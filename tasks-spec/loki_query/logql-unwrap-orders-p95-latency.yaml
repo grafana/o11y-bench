@@ -18,7 +18,5 @@ rubric:
     kind: query
     backend: loki
     query: quantile_over_time(0.95, {job="order-service"} | json | method="POST" | path="/api/orders" | unwrap duration_ms | __error__="" [6h]) by ()
-- criterion: The response discusses order-service latency
-  weight: 25.0
 - criterion: The response includes numeric latency evidence
   weight: 20.0

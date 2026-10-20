@@ -4,26 +4,17 @@ from grading.env_context import (
     default_tempo_search_window_sec,
     fetch_grafana_datasources_checked,
     fetch_tempo_attribute_values,
+    find_trace_example,
     resolve_grafana_datasource,
 )
-from grading.helpers import (
-    additional_trace_id_tool_names,
-    as_name_set,
-    assistant_scope_note,
-    assistant_text_blobs,
-    require_stack_url,
-    response_cites_trace_id_prefix,
-    tempo_tool_matches_name,
-    tool_call_id_to_name,
-    trace_ids_from_tool_content,
-)
+from grading.helpers import cited_trace_ids, require_stack_url
 from grading.models import (
     CheckItem,
+    CitedTraceParams,
     DashboardStateParams,
     DatasourceDetailStateParams,
     DatasourceInventoryStateParams,
     TempoTraceServiceInventoryStateParams,
-    ToolTraceIdGroundingParams,
     Transcript,
 )
 
@@ -50,8 +41,8 @@ def run_check(
     ctx: VerifierContext | None,
 ) -> tuple[float, str]:
     match check.params:
-        case ToolTraceIdGroundingParams():
-            return validate_tool_trace_id_grounding(check.params, transcript)
+        case CitedTraceParams():
+            return validate_cited_trace(check.params, transcript, ctx)
         case DashboardStateParams():
             return validate_dashboard_state(check.params, transcript, ctx)
         case DatasourceInventoryStateParams():
@@ -64,56 +55,25 @@ def run_check(
             return 0.0, f"Unsupported check params mode {check.params.mode!r}."
 
 
-def validate_tool_trace_id_grounding(
-    params: ToolTraceIdGroundingParams,
+def validate_cited_trace(
+    params: CitedTraceParams,
     transcript: Transcript,
+    ctx: VerifierContext | None,
 ) -> tuple[float, str]:
-    allowed_names = as_name_set(params.tool_name) if params.tool_name else None
-    extra_tool_names = additional_trace_id_tool_names(
-        {"additional_tool_names": params.additional_tool_names}
+    """Pass when a trace the final response cites by full ID is in Tempo and matches."""
+    if ctx is None or not ctx.tempo_url:
+        return 0.0, "TEMPO_URL is not set."
+    ids = cited_trace_ids(transcript.final_answer())
+    if not ids:
+        return 0.0, "The final response cites no full trace ID."
+    example, misses, err = find_trace_example(
+        ctx.tempo_url, ids, params.match, params.lookback_hours, ctx.timeout_sec
     )
-
-    call_id_to_name = tool_call_id_to_name(transcript)
-    found_ids: set[str] = set()
-    for msg in transcript.messages:
-        if msg.role != "tool" or not msg.tool_results:
-            continue
-        for tool_result in msg.tool_results:
-            name = call_id_to_name.get(tool_result.tool_call_id, "")
-            if name not in extra_tool_names and not tempo_tool_matches_name(
-                name,
-                allowed_names if allowed_names else None,
-                params.tool_name_prefix,
-            ):
-                continue
-            found_ids.update(trace_ids_from_tool_content(tool_result.content))
-
-    if not found_ids:
-        scope = (
-            f" ({sorted(allowed_names)})"
-            if allowed_names
-            else f" (prefix {params.tool_name_prefix!r})"
-        )
-        if extra_tool_names:
-            scope += f" + {sorted(extra_tool_names)}"
-        return 0.0, f"No hex trace IDs found in tool results{scope}."
-
-    text_blobs = assistant_text_blobs(transcript, params.assistant_scope)
-    if not text_blobs:
-        return 0.0, "No agent response found."
-
-    matched, prefix = response_cites_trace_id_prefix(
-        text_blobs,
-        found_ids,
-        params.prefix_min_chars,
-    )
-    if matched and prefix:
-        scope_note = assistant_scope_note(params.assistant_scope)
-        return (
-            1.0,
-            f"Response cites trace ID prefix grounded in tool results ({prefix}, {scope_note}).",
-        )
-    return 0.0, "Response does not cite any trace ID prefix that appeared in tool results."
+    if err:
+        return 0.0, err
+    if example:
+        return 1.0, f"Cited trace {example} is in Tempo and matches {params.match}."
+    return 0.0, f"No cited trace matches {params.match}: " + "; ".join(misses) + "."
 
 
 def validate_datasource_inventory(

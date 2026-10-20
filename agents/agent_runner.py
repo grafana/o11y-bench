@@ -106,11 +106,12 @@ async def discover_tools(session: Any) -> list[dict[str, Any]]:
     return tools
 
 
-async def call_mcp_tool(session: Any, name: str, arguments: dict[str, Any]) -> str:
-    """Call an MCP tool and return text content."""
+async def call_mcp_tool(session: Any, name: str, arguments: dict[str, Any]) -> tuple[str, bool]:
+    """Call an MCP tool and return its text content and whether it reported an error."""
     result = await session.call_tool(name, arguments)
     texts = [item.text for item in result.content if hasattr(item, "text")]
-    return "\n".join(texts) if texts else json.dumps(str(result.content))
+    text = "\n".join(texts) if texts else json.dumps(str(result.content))
+    return text, bool(getattr(result, "isError", False))
 
 
 def make_atif_step(
@@ -249,12 +250,13 @@ def build_litellm_kwargs(
 ) -> dict[str, Any]:
     litellm_kwargs: dict[str, Any] = {
         "model": model,
-        "tools": tools,
         "drop_params": True,
         "cache_control_injection_points": [
             {"location": "message", "role": "system"},
         ],
     }
+    if tools:
+        litellm_kwargs["tools"] = tools
     if reasoning_effort == "off":
         litellm_kwargs.update(effort_off_settings(model))
     elif reasoning_effort != "default":  # "default" sends nothing: the provider decides
@@ -339,6 +341,13 @@ async def run_agent() -> None:
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await discover_tools(session)
+                # Weakened control build: no tools, so the agent can only guess. A criterion
+                # this build passes is not grading the outcome (calibration, not a real run).
+                if os.environ.get("O11Y_CONTROL_NO_TOOLS") == "1":
+                    tools = []
+                elif not tools:
+                    # A silent tool-less run would be graded as if the agent had tried.
+                    raise RuntimeError(f"MCP server at {mcp_url} exposed no tools")
                 tool_defs[:] = [t["function"] for t in tools]
                 print(f"Discovered {len(tools)} tools, model={model}")
 
@@ -431,13 +440,16 @@ async def run_agent() -> None:
                         fn = tc.function.name or ""
                         fa = parse_tool_arguments(tc.function.arguments)
                         try:
-                            out = await call_mcp_tool(session, fn, fa)
+                            out, is_error = await call_mcp_tool(session, fn, fa)
                             print(f"{fn}({len(out)})", end=" ", flush=True)
                         except Exception as e:
-                            out = f"Error: {e}"
+                            out, is_error = f"Error: {e}", True
                             print(f"{fn}(ERR)", end=" ", flush=True)
 
-                        observation_results.append({"source_call_id": tc.id, "content": out})
+                        result: dict[str, Any] = {"source_call_id": tc.id, "content": out}
+                        if is_error:
+                            result["extra"] = {"is_error": True}
+                        observation_results.append(result)
                         messages.append({"role": "tool", "tool_call_id": tc.id, "content": out})
 
                     step_id += 1

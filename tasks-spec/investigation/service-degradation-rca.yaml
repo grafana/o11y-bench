@@ -12,13 +12,19 @@ statement: |
   include a representative trace id if you find one.
 checks: []
 rubric:
-- criterion: The final response characterizes the slowdown as a severe multi-second issue in a way that is consistent with the incident telemetry.
+- criterion: The final response characterizes the slowdown as a severe multi-second issue, consistent with the order-service p95 peak in the Source of truth.
   weight: 30
+  fact:
+    kind: query
+    backend: prometheus
+    query: max_over_time(histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job="order-service"}[5m])))[8h:1m])
 - criterion: The final response summarizes what metrics showed, what logs showed, and what traces added (including stating if traces were inconclusive)
   weight: 15.0
-- criterion: The final response names one primary bottleneck and explains how symptoms in other services or layers connect to that bottleneck
+- criterion: The final response names the job with the highest peak p95 in the Source of truth as the primary bottleneck and explains how symptoms in other services or layers connect to it
   weight: 15.0
+  fact:
+    kind: query
+    backend: prometheus
+    query: topk(3, max_over_time(histogram_quantile(0.95, sum by (job, le) (rate(http_request_duration_seconds_bucket[5m])))[8h:1m]))
 - criterion: The response names impacted services
   weight: 25.0
-- criterion: The transcript shows at least two distinct observability pulls (metrics, logs, or trace fetches) before the final answer states a root cause
-  weight: 15.0
