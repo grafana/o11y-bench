@@ -16,15 +16,21 @@ RUN apk add --no-cache \
 # Install mcp-grafana — use a local binary if present, otherwise fetch the
 # pinned release. Release names use x86_64 instead of amd64.
 # --mount=type=bind exposes the build context at /ctx without adding a layer.
-ARG MCP_GRAFANA_VERSION=0.11.6
+ARG MCP_GRAFANA_VERSION=2.0.2
+# SHA-256 of the release tarballs (see the release's checksums file); update with the version.
+ARG MCP_GRAFANA_SHA256_x86_64=624e997b78bcadf236f82f8086827890ba77b6dfdc6fd6446f7c48dfd9e586f0
+ARG MCP_GRAFANA_SHA256_arm64=96559ba56803c253ee4bfc2be971a5132bdd60a09b4a20375b6456564216ec48
 RUN --mount=type=bind,source=.,target=/ctx \
     if [ -x /ctx/mcp-grafana ]; then \
       echo "Installing mcp-grafana from local binary"; \
       cp /ctx/mcp-grafana /usr/local/bin/mcp-grafana; \
     else \
       MCP_ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "arm64" || echo "x86_64") && \
-      curl -fsSL https://github.com/grafana/mcp-grafana/releases/download/v${MCP_GRAFANA_VERSION}/mcp-grafana_Linux_${MCP_ARCH}.tar.gz \
-      | tar xz -C /usr/local/bin mcp-grafana; \
+      MCP_SHA256=$([ "$MCP_ARCH" = "arm64" ] && echo "$MCP_GRAFANA_SHA256_arm64" || echo "$MCP_GRAFANA_SHA256_x86_64") && \
+      curl -fsSL -o /tmp/mcp-grafana.tar.gz https://github.com/grafana/mcp-grafana/releases/download/v${MCP_GRAFANA_VERSION}/mcp-grafana_Linux_${MCP_ARCH}.tar.gz && \
+      echo "$MCP_SHA256  /tmp/mcp-grafana.tar.gz" | sha256sum -c - && \
+      tar xzf /tmp/mcp-grafana.tar.gz -C /usr/local/bin mcp-grafana && \
+      rm /tmp/mcp-grafana.tar.gz; \
     fi && \
     chmod +x /usr/local/bin/mcp-grafana
 
