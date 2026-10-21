@@ -13,7 +13,7 @@ statement: |
   order-service looks like spillover.
 checks: []
 rubric:
-- criterion: The final response states the combined payment-service and order-service 5xx share within 5% of the truth.
+- criterion: The final response states the combined payment-service and order-service 5xx share.
   weight: 55
   fact:
     kind: query

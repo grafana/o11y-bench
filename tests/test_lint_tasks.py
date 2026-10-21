@@ -25,17 +25,17 @@ SIBLING = {"criterion": "Reports the error count.", "weight": 1, "fact": FACT}
 
 
 @pytest.mark.parametrize(
-    ("criterion", "statement", "backed", "rules"),
+    ("criterion", "backed", "rules"),
     [
-        ("Names the slowest service.", "q", False, []),
-        ("The transcript shows a rate() query.", "q", True, ["method-criterion"]),
-        ("The response is helpful.", "q", False, ["vague-outcome"]),
-        ("Quotes the tool output verbatim.", "q", False, ["tool-output-criterion"]),
-        ("Does not invent a service that is absent.", "q", False, ["provenance-criterion"]),
-        ("Does not invent a service that is absent.", "q", True, []),
-        ("States the share within 5% of the truth.", "q", True, ["precision-rule"]),
-        ("States the share within 5% of the truth.", "Roughly what share?", True, []),
-        ("States the share roughly accurately.", "Roughly?", True, ["precision-rule"]),
+        ("Names the slowest service.", False, []),
+        ("The transcript shows a rate() query.", True, ["method-criterion"]),
+        ("The response is helpful.", False, ["vague-outcome"]),
+        ("Quotes the tool output verbatim.", False, ["tool-output-criterion"]),
+        ("Does not invent a service that is absent.", False, ["provenance-criterion"]),
+        ("Does not invent a service that is absent.", True, []),
+        ("States the share within 5% of the truth.", True, ["precision-rule"]),
+        ("Jobs within 2% of each other are tied.", True, []),
+        ("States the share roughly accurately.", True, ["precision-rule"]),
     ],
     ids=[
         "clean",
@@ -44,15 +44,15 @@ SIBLING = {"criterion": "Reports the error count.", "weight": 1, "fact": FACT}
         "tool-output",
         "provenance",
         "provenance-backed-by-a-fact",
-        "tolerance-without-a-rough-ask",
-        "tolerance-for-a-rough-ask",
-        "vague-tolerance-even-for-a-rough-ask",
+        "tolerance",
+        "tie-band-describes-the-truth",
+        "vague-tolerance",
     ],
 )
-def test_criteria_rules(criterion: str, statement: str, backed: bool, rules: list[str]) -> None:
+def test_criteria_rules(criterion: str, backed: bool, rules: list[str]) -> None:
     item = {"criterion": criterion, "weight": 1, **({"fact": FACT} if backed else {})}
 
-    assert _rules(category="prometheus_query", statement=statement, rubric=[item, SIBLING]) == rules
+    assert _rules(category="prometheus_query", rubric=[item, SIBLING]) == rules
 
 
 def test_result_tasks_need_a_fact_or_saved_state() -> None:

@@ -12,7 +12,7 @@ statement: |
   full time the service takes to handle the request, including the calls it waits on, not short
   nested spans - and roughly what p99 does the telemetry show?
 rubric:
-- criterion: The final response states order-service's p99 on POST /api/orders (its row in the Source of truth) within 20% of the truth; TraceQL metrics and span samples estimate a p99 differently.
+- criterion: The final response states order-service's p99 on POST /api/orders (its row in the Source of truth).
   weight: 55
   fact:
     kind: query

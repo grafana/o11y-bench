@@ -25,7 +25,7 @@ rubric:
 # A rate() or increase() on this gauge reads every drop as a counter reset and reports a large
 # positive rate while the backlog drains, so it fails the speed criterion on sign and size.
 - criterion: The final response states how fast the payment-service backlog drained, in items per
-    minute, within 10% of the Source of truth, the steepest 10-minute drain rate (the drain is close
+    minute, matching the Source of truth, the steepest 10-minute drain rate (the drain is close
     to linear, so its peak-to-zero average counts too)
   weight: 50
   fact:
@@ -38,8 +38,8 @@ rubric:
     kind: query
     backend: prometheus
     query: max_over_time(service_retry_queue_depth{job="payment-service"}[3h])
-- criterion: The final response's drain duration, from peak back to zero, is within 3 minutes of
-    the Source of truth, minutes from the peak sample to the first zero
+- criterion: The final response's drain duration, from peak back to zero, matches the Source of
+    truth, minutes from the peak sample to the first zero
   weight: 30
   fact:
     kind: query
