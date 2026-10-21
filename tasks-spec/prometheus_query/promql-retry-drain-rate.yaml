@@ -25,13 +25,13 @@ rubric:
 # A rate() or increase() on this gauge reads every drop as a counter reset and reports a large
 # positive rate while the backlog drains, so it fails the speed criterion on sign and size.
 - criterion: The final response states how fast the payment-service backlog drained, in items per
-    minute, matching the Source of truth, the steepest 10-minute drain rate (the drain is close
-    to linear, so its peak-to-zero average counts too)
+    minute, matching either value in the Source of truth, the steepest 10-minute drain rate or
+    the peak-to-zero average (the drain is close to linear)
   weight: 50
   fact:
     kind: query
     backend: prometheus
-    query: min_over_time(deriv(service_retry_queue_depth{job="payment-service"}[10m])[3h:1m]) * -60
+    query: label_replace(min_over_time(deriv(service_retry_queue_depth{job="payment-service"}[10m])[3h:1m]) * -60, "measure", "steepest_10m_drain_per_min", "", "") or label_replace(max_over_time(service_retry_queue_depth{job="payment-service"}[3h]) / ((max_over_time(timestamp(service_retry_queue_depth{job="payment-service"} > 0)[3h:1m]) - max_over_time((timestamp(service_retry_queue_depth{job="payment-service"}) and service_retry_queue_depth{job="payment-service"} == max_over_time(service_retry_queue_depth{job="payment-service"}[3h]))[3h:1m])) / 60 + 1), "measure", "peak_to_zero_average_per_min", "", "")
 - criterion: The final response states the payment-service backlog peak depth accurately
   weight: 20
   fact:
