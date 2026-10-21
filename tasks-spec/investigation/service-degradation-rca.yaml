@@ -26,5 +26,3 @@ rubric:
     kind: query
     backend: prometheus
     query: topk(3, max_over_time(histogram_quantile(0.95, sum by (job, le) (rate(http_request_duration_seconds_bucket[5m])))[8h:1m]))
-- criterion: The response names impacted services
-  weight: 25.0

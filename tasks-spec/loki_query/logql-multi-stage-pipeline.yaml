@@ -17,7 +17,7 @@ rubric:
     kind: query
     backend: loki
     query: max(max_over_time({job=~".+"} | json | unwrap duration_ms | __error__="" [6h]))
-- criterion: The final response names the slowest API paths by p95 request duration, led by the top path in the Source of truth.
+- criterion: The final response names the slowest API paths, led by the top path in the Source of truth, which ranks paths by p95 request duration.
   weight: 30.0
   fact:
     kind: query
