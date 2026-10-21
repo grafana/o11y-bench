@@ -15,7 +15,6 @@ import bisect
 import json
 import os
 import random
-import subprocess
 import time
 import urllib.error
 import urllib.parse
@@ -27,8 +26,7 @@ LOKI_URL = "http://localhost:3100"
 TEMPO_URL = "http://localhost:4318"  # OTLP HTTP endpoint
 TEMPO_QUERY_URL = "http://localhost:3200"
 PROMETHEUS_DATA_DIR = "/prometheus"
-# Empty OTLP payload is enough to verify the HTTP ingest path is up.
-_OTLP_HEALTH_BODY = b'{"resourceSpans":[]}'
+METRICS_FILE = "/tmp/metrics.txt"
 
 # 24h PromQL/LogQL ranges evaluated at snapshot time need samples *before* now-24h
 # (range vectors are left-open; Grafana steps can sit 5m before the window start).
@@ -592,9 +590,13 @@ class ServiceMetrics:
 # -- Unified Event Generator -------------------------------------------------
 
 
-def push_traces_batch(spans: list[dict], retries: int = 3) -> bool:
+# Request bodies the generator would have sent to Tempo and Loki; o11y_stack.seed keeps them.
+DUMP: dict = {"traces": [], "logs": []}
+
+
+def push_traces_batch(spans: list[dict]) -> None:
     if not spans:
-        return True
+        return
 
     service_spans: dict[str, list] = {}
     for span in spans:
@@ -618,30 +620,12 @@ def push_traces_batch(spans: list[dict], retries: int = 3) -> bool:
         for service, svc_spans in service_spans.items()
     ]
 
-    payload = json.dumps({"resourceSpans": resource_spans}).encode()
-
-    for attempt in range(retries):
-        try:
-            req = urllib.request.Request(
-                f"{TEMPO_URL}/v1/traces",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-            )
-            urllib.request.urlopen(req, timeout=10)
-            return True
-        except urllib.error.HTTPError as exc:
-            if exc.code == 503 and attempt < retries - 1:
-                time.sleep(0.5)
-                continue
-            return False
-        except Exception:
-            return False
-    return False
+    DUMP["traces"].append(json.dumps({"resourceSpans": resource_spans}).encode())
 
 
-def push_logs_batch(logs: list[dict]) -> bool:
+def push_logs_batch(logs: list[dict]) -> None:
     if not logs:
-        return True
+        return
 
     streams: dict[str, dict] = {}
     for entry in logs:
@@ -654,17 +638,7 @@ def push_logs_batch(logs: list[dict]) -> bool:
     for stream in streams.values():
         stream["values"].sort(key=lambda v: int(v[0]))
 
-    try:
-        req = urllib.request.Request(
-            f"{LOKI_URL}/loki/api/v1/push",
-            data=json.dumps({"streams": list(streams.values())}).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        urllib.request.urlopen(req, timeout=10)
-        return True
-    except Exception as exc:
-        log(f"  Loki error: {exc}")
-        return False
+    DUMP["logs"].append(json.dumps({"streams": list(streams.values())}).encode())
 
 
 def fetch_loki_line_count(end_time: datetime) -> tuple[int, str]:
@@ -684,7 +658,7 @@ def fetch_loki_line_count(end_time: datetime) -> tuple[int, str]:
 
 
 def wait_for_loki_complete(
-    end_time: datetime, expected_lines: int, max_attempts: int = 60, poll_interval: float = 1.0
+    end_time: datetime, expected_lines: int, max_attempts: int = 1200, poll_interval: float = 0.05
 ) -> None:
     # Loki serves backdated logs from flushed chunks only and flushes on a timer (up to ~30s
     # after boot), so queries answer empty until then. Flush now and wait for every line.
@@ -704,23 +678,6 @@ def wait_for_loki_complete(
         time.sleep(poll_interval)
     log(f"  Loki never indexed every line: {indexed}/{expected_lines} {err}")
     raise RuntimeError("Loki never became ready")
-
-
-def wait_for_tempo(max_attempts: int = 10) -> None:
-    url = f"{TEMPO_URL}/v1/traces"
-    headers = {"Content-Type": "application/json"}
-    for attempt in range(max_attempts):
-        try:
-            urllib.request.urlopen(
-                urllib.request.Request(url, data=_OTLP_HEALTH_BODY, headers=headers),
-                timeout=5,
-            )
-            return
-        except Exception as exc:
-            if attempt == max_attempts - 1:
-                log(f"  Tempo OTLP not ready after {max_attempts} attempts: {exc}")
-                raise RuntimeError("Tempo OTLP never became ready") from exc
-            time.sleep(1)
 
 
 def fetch_tempo_search_traces(
@@ -787,8 +744,8 @@ def _probe_detail(name: str, traces: list[dict], err: str) -> str:
 
 def wait_for_tempo_searchable(
     end_time: datetime,
-    max_attempts: int = 120,
-    poll_interval: float = 1.0,
+    max_attempts: int = 2400,
+    poll_interval: float = 0.05,
     expected_traces: int | None = None,
 ) -> None:
     # Probes are tracked independently: broad and error searches may become ready
@@ -838,7 +795,7 @@ def wait_for_tempo_searchable(
             )
             return
 
-        if attempt == 0 or attempt_num % 5 == 0:
+        if attempt == 0 or attempt_num % 100 == 0:
             details = [
                 _probe_detail("broad", broad_traces, broad_err),
                 _probe_detail("error", error_traces, error_err),
@@ -874,14 +831,12 @@ def generate_all_data() -> dict[str, ServiceMetrics]:
     end_time = data_end_time_utc()
     start_time = end_time - timedelta(hours=HOURS_OF_HISTORY)
     incidents = IncidentConfig(end_time)
-    # Tempo is required for the benchmark. If OTLP never comes up, fail fast.
-    wait_for_tempo()
 
     # State
     service_metrics = {s["name"]: ServiceMetrics() for s in SERVICES}
     trace_batch: list[dict] = []
     log_batch: list[dict] = []
-    metrics_file = "/tmp/metrics.txt"
+    metrics_file = METRICS_FILE
 
     total_requests = 0
     total_traces = 0
@@ -1128,79 +1083,14 @@ def generate_all_data() -> dict[str, ServiceMetrics]:
     if log_batch:
         push_logs_batch(log_batch)
 
-    log("  Waiting for Loki to serve every line...")
-    wait_for_loki_complete(end_time, total_logs)
-    log("  Waiting for Tempo search to become ready...")
-    wait_for_tempo_searchable(end_time, expected_traces=total_traces)
-
+    DUMP["meta"] = {
+        "end_time": end_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "logs": total_logs,
+        "traces": total_traces,
+    }
     log(f"  Requests: {total_requests:,}")
     log(f"  Traces: {total_traces:,}")
     log(f"  Logs: {total_logs:,}")
     log(f"  Metric samples: {total_samples:,}")
 
-    # Import metrics to Prometheus TSDB
-    log("  Importing metrics to Prometheus TSDB...")
-    try:
-        result = subprocess.run(
-            [
-                "promtool",
-                "tsdb",
-                "create-blocks-from",
-                # Compatible promtool block size (2h * 3^3), not data duration.
-                "--max-block-duration=54h",
-                "openmetrics",
-                metrics_file,
-                PROMETHEUS_DATA_DIR,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-        if result.returncode == 0:
-            log("  Metrics import complete")
-        else:
-            stderr = result.stderr[:500] if result.stderr else "no stderr"
-            log(f"  promtool failed (rc={result.returncode}): {stderr}")
-            raise SystemExit(1) from None
-    except subprocess.TimeoutExpired as exc:
-        log("  promtool timed out")
-        raise SystemExit(1) from exc
-    except SystemExit:
-        raise
-    except Exception as exc:
-        log(f"  promtool error: {exc}")
-        raise SystemExit(1) from exc
-
-    try:
-        os.remove(metrics_file)
-    except Exception:
-        pass
-
-    env_ts = end_time.strftime("%Y-%m-%dT%H:%M:%SZ")
-    with open("/tmp/env_timestamp", "w") as f:
-        f.write(env_ts)
-    log(f"  Environment timestamp: {env_ts}")
-
     return service_metrics
-
-
-# -- Main --------------------------------------------------------------------
-
-
-def main() -> None:
-    random.seed(42)
-
-    log("=" * 50)
-    log("Telemetry Data Generator (deterministic, correlated)")
-    log(f"History: {HOURS_OF_HISTORY}h ({HOURS_OF_HISTORY // 24}d), interval: {METRICS_INTERVAL}s")
-    log("=" * 50)
-
-    start = time.time()
-    generate_all_data()
-    elapsed = time.time() - start
-
-    log(f"Data generation complete in {elapsed:.1f}s")
-
-
-if __name__ == "__main__":
-    main()

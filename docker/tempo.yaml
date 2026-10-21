@@ -45,7 +45,7 @@ metrics_generator:
 storage:
   trace:
     backend: local
-    blocklist_poll: 1s
+    blocklist_poll: 100ms
     wal:
       path: /var/tempo/wal
     block:
@@ -73,9 +73,9 @@ overrides:
 # results do not depend on how recently the data was written.
 live_store:
   fail_on_high_lag: false
-  flush_check_period: 1s
-  max_trace_idle: 1s
-  max_block_duration: 5s
+  flush_check_period: 50ms
+  max_trace_idle: 100ms
+  max_block_duration: 300ms
   wal:
     # Block start/end times only expand to spans within this slack of real wall-clock
     # time. Backdated benchmark scenarios can sit days/weeks in the past, so keep this

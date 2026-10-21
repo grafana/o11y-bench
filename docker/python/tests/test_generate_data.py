@@ -4,7 +4,6 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from o11y_stack import generate_data
@@ -202,15 +201,10 @@ def generate(
             return runs[clock]
         logs: list[dict] = []
         with pytest.MonkeyPatch.context() as mp:
-            for name in ("wait_for_tempo", "wait_for_loki_complete", "wait_for_tempo_searchable"):
+            for name in ("wait_for_loki_complete", "wait_for_tempo_searchable"):
                 mp.setattr(generate_data, name, lambda *args, **kwargs: None)
             mp.setattr(generate_data, "push_traces_batch", lambda spans: True)
             mp.setattr(generate_data, "push_logs_batch", lambda batch: logs.extend(batch))
-            mp.setattr(
-                generate_data.subprocess,
-                "run",
-                lambda *args, **kwargs: SimpleNamespace(returncode=0),
-            )
             mp.setattr(
                 generate_data,
                 "open",

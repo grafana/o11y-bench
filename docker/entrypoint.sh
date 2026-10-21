@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
 
+# Attempts are 50 ms apart.
 sanitize_max_attempts() {
     local name=$1
     local default_value=$2
@@ -17,12 +18,9 @@ sanitize_max_attempts() {
     printf '%s\n' "$default_value"
 }
 
-LOKI_MAX_ATTEMPTS=$(sanitize_max_attempts "LOKI_MAX_ATTEMPTS" 120)
-TEMPO_MAX_ATTEMPTS=$(sanitize_max_attempts "TEMPO_MAX_ATTEMPTS" 120)
-TEMPO_OTLP_MAX_ATTEMPTS=$(sanitize_max_attempts "TEMPO_OTLP_MAX_ATTEMPTS" 120)
-PROMETHEUS_MAX_ATTEMPTS=$(sanitize_max_attempts "PROMETHEUS_MAX_ATTEMPTS" 120)
-GRAFANA_MAX_ATTEMPTS=$(sanitize_max_attempts "GRAFANA_MAX_ATTEMPTS" 180)
-MCP_MAX_ATTEMPTS=$(sanitize_max_attempts "MCP_MAX_ATTEMPTS" 60)
+PROMETHEUS_MAX_ATTEMPTS=$(sanitize_max_attempts "PROMETHEUS_MAX_ATTEMPTS" 1200)
+GRAFANA_MAX_ATTEMPTS=$(sanitize_max_attempts "GRAFANA_MAX_ATTEMPTS" 1800)
+MCP_MAX_ATTEMPTS=$(sanitize_max_attempts "MCP_MAX_ATTEMPTS" 600)
 SIDECAR_LOGS_ENABLED=${O11Y_STACK_DEBUG_LOGS:-}
 
 sidecar_logs_enabled() {
@@ -63,7 +61,7 @@ wait_for_service() {
             echo "$name ready"
             return 0
         fi
-        sleep 0.5
+        sleep 0.05
         attempt=$((attempt + 1))
     done
     echo "ERROR: $name failed to start after $max_attempts attempts"
@@ -72,26 +70,6 @@ wait_for_service() {
         tail -50 "$log_file"
         echo "=== end $name logs ==="
     fi
-    return 1
-}
-
-wait_for_tempo_otlp() {
-    local max_attempts=${1:-30}
-    local attempt=1
-    # Minimal JSON trace accepted by OTLP HTTP; proves 4318 is serving, not only /ready.
-    local probe='{"resourceSpans":[{"resource":{"attributes":[]},"scopeSpans":[{"scope":{"name":"test"},"spans":[{"traceId":"00000000000000000000000000000001","spanId":"0000000000000001","name":"test","startTimeUnixNano":"1000000000","endTimeUnixNano":"1000000001"}]}]}]}'
-
-    while [ $attempt -le $max_attempts ]; do
-        if curl -sf -X POST "http://localhost:4318/v1/traces" \
-            -H "Content-Type: application/json" \
-            -d "$probe" > /dev/null 2>&1; then
-            echo "Tempo OTLP ready"
-            return 0
-        fi
-        sleep 0.5
-        attempt=$((attempt + 1))
-    done
-    echo "ERROR: Tempo OTLP not ready after $max_attempts attempts"
     return 1
 }
 
@@ -107,7 +85,7 @@ wait_for_http_listener() {
             echo "$name ready"
             return 0
         fi
-        sleep 0.5
+        sleep 0.05
         attempt=$((attempt + 1))
     done
     echo "ERROR: $name failed to start after $max_attempts attempts"
@@ -145,40 +123,34 @@ else
     echo "Sidecar file logging disabled (set O11Y_STACK_DEBUG_LOGS=1 to enable)"
 fi
 
-# Start Loki, Tempo, and Grafana in parallel
+# Start Grafana (the slowest to come up), Loki and Tempo in parallel
 echo "Starting services..."
+# Pre-migrated database (built into the image) copied onto memory-backed storage
+mkdir -p /dev/shm/grafana
+cp -r /seed/grafana/. /dev/shm/grafana/
+(
+    . /etc/grafana/o11y-env.sh
+    exec /usr/share/grafana/bin/grafana server \
+        --homepath=/usr/share/grafana \
+        --config=/usr/share/grafana/conf/defaults.ini \
+        > "$GRAFANA_LOG" 2>&1
+) &
+
 /usr/local/bin/loki --config.file=/etc/loki/config.yaml > "$LOKI_LOG" 2>&1 &
 
 /usr/local/bin/tempo --config.file=/etc/tempo/tempo.yaml > "$TEMPO_LOG" 2>&1 &
 
-GF_PATHS_PROVISIONING="/etc/grafana/provisioning" \
-GF_PATHS_PLUGINS="/var/lib/grafana/plugins" \
-GF_AUTH_ANONYMOUS_ENABLED="true" \
-GF_AUTH_ANONYMOUS_ORG_ROLE="Admin" \
-GF_AUTH_BASIC_ENABLED="false" \
-GF_INSTALL_PLUGINS="" \
-GF_PLUGINS_PREINSTALL_DISABLED="true" \
-GF_ANALYTICS_CHECK_FOR_UPDATES="false" \
-GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES="false" \
-/usr/share/grafana/bin/grafana server \
-    --homepath=/usr/share/grafana \
-    --config=/usr/share/grafana/conf/defaults.ini \
-    > "$GRAFANA_LOG" 2>&1 &
-
-# Wait for Loki and Tempo (needed for data generation)
-wait_for_service "http://localhost:3100/ready" "Loki" "$LOKI_MAX_ATTEMPTS" "$LOKI_LOG"
-wait_for_service "http://localhost:3200/ready" "Tempo" "$TEMPO_MAX_ATTEMPTS" "$TEMPO_LOG"
-wait_for_tempo_otlp "$TEMPO_OTLP_MAX_ATTEMPTS"
-
-# Generate telemetry data (writes /tmp/env_timestamp when done)
-echo "Generating telemetry data..."
-PYTHONPATH=/scripts python3 -m o11y_stack.generate_data
+# Replay the pre-generated seed data shifted to the scenario clock: Loki and Tempo ingest while
+# the metrics become a TSDB block, which Prometheus then loads.
+echo "Replaying seed data..."
+PYTHONPATH=/scripts python3 -m o11y_stack.seed ingest &
+INGEST_WAIT_PID=$!
+PYTHONPATH=/scripts python3 -m o11y_stack.seed metrics
 if [ ! -f /tmp/env_timestamp ]; then
-    echo "ERROR: data generation failed (no env_timestamp)"
+    echo "ERROR: seed replay failed (no env_timestamp)"
     exit 1
 fi
 
-# Start Prometheus after data generation (so it loads TSDB blocks)
 echo "Starting Prometheus..."
 /usr/local/bin/prometheus \
     --config.file=/etc/prometheus/prometheus.yml \
@@ -190,6 +162,7 @@ echo "Starting Prometheus..."
 # Wait for all services
 wait_for_service "http://localhost:9090/-/ready" "Prometheus" "$PROMETHEUS_MAX_ATTEMPTS" "$PROMETHEUS_LOG"
 wait_for_service "http://localhost:3000/api/health" "Grafana" "$GRAFANA_MAX_ATTEMPTS" "$GRAFANA_LOG"
+wait "$INGEST_WAIT_PID"
 provision_task_resources
 
 # Start mcp-grafana in streamable-http mode for Harbor agent access.
@@ -199,7 +172,7 @@ provision_task_resources
 # --allowed-hosts, category flags like --disable-sift vanish with their
 # category). Go's flag package exits non-zero on an unknown flag, which would
 # leave the sidecar with no MCP server.
-MCP_HELP="$(/usr/local/bin/mcp-grafana --help 2>&1 || true)"
+MCP_HELP="$(cat /etc/mcp-grafana-help.txt)"
 
 # Go's flag package lists flags single-dashed and indented ("  -disable-oncall").
 # Anchor on that shape: a bare substring match would also hit flag names quoted
