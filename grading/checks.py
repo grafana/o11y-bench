@@ -4,7 +4,7 @@ from grading.env_context import (
     default_tempo_search_window_sec,
     fetch_grafana_datasources_checked,
     fetch_tempo_attribute_values,
-    find_trace_example,
+    find_trace_examples,
     resolve_grafana_datasource,
 )
 from grading.helpers import cited_trace_ids, require_stack_url
@@ -66,13 +66,13 @@ def validate_cited_trace(
     ids = cited_trace_ids(transcript.final_answer())
     if not ids:
         return 0.0, "The final response cites no full trace ID."
-    example, misses, err = find_trace_example(
+    examples, misses, err = find_trace_examples(
         ctx.tempo_url, ids, params.match, params.lookback_hours, ctx.timeout_sec
     )
     if err:
         return 0.0, err
-    if example:
-        return 1.0, f"Cited trace {example} is in Tempo and matches {params.match}."
+    if examples:
+        return 1.0, f"Cited trace {examples[0]} is in Tempo and matches {params.match}."
     return 0.0, f"No cited trace matches {params.match}: " + "; ".join(misses) + "."
 
 
