@@ -655,11 +655,11 @@ def fetch_tempo_trace(
     return spans, ""
 
 
-def find_trace_example(
+def find_trace_examples(
     base_url: str, trace_ids: list[str], match: str, lookback_hours: float, timeout_sec: float
-) -> tuple[str | None, list[str], str]:
-    """The first cited trace that is in Tempo and matches `match`, with why each one before it
-    fell short ("<id> (does not match)", "<id> (not in Tempo)")."""
+) -> tuple[list[str], list[str], str]:
+    """The cited traces that are in Tempo and match `match`, in citation order, with why each
+    other one fell short ("<id> (does not match)", "<id> (not in Tempo)")."""
     start_sec, end_sec = default_tempo_search_window_sec(lookback_hours)
 
     def found(query: str) -> tuple[bool, str]:
@@ -668,18 +668,20 @@ def find_trace_example(
         )
         return bool(traces), err
 
+    examples: list[str] = []
     misses: list[str] = []
     for trace_id in trace_ids:
         matched, err = found(f'{match} && {{ trace:id = "{trace_id}" }}')
         if err:
-            return None, misses, err
+            return [], misses, err
         if matched:
-            return trace_id, misses, ""
+            examples.append(trace_id)
+            continue
         exists, err = found(f'{{ trace:id = "{trace_id}" }}')
         if err:
-            return None, misses, err
+            return [], misses, err
         misses.append(f"{trace_id} ({'does not match' if exists else 'not in Tempo'})")
-    return None, misses, ""
+    return examples, misses, ""
 
 
 def default_tempo_search_window_sec(lookback_hours: float = 24.0) -> tuple[int, int]:

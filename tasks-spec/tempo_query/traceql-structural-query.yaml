@@ -34,9 +34,9 @@ rubric:
   weight: 10
   fact:
     kind: cited_trace
-- criterion: Any downstream call the final response flags as unusually slow is slow against the typical
-    checkout call durations in the Source of truth (median and p95 per call); when none is, saying nothing
-    looks unusually slow is right
+- criterion: The final response says which downstream calls look unusually slow, and each one it flags is
+    slow against the typical checkout call durations in the Source of truth (median and p95 per call); when
+    none is, it says no downstream call looks unusually slow
   weight: 10
   fact:
     kind: query

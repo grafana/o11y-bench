@@ -18,7 +18,7 @@ rubric:
     kind: query
     backend: prometheus
     query: sum(up)
-- criterion: The final response states the worst backend 5xx share within 5% of the truth.
+- criterion: The final response states the worst backend 5xx share.
   weight: 20
   fact:
     kind: query

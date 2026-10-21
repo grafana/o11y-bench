@@ -18,10 +18,8 @@ from scripts.sync_tasks import DEFAULT_SPECS_ROOT, iter_spec_files
 PRECISION = re.compile(
     r"(?i)\bsignificant (figures|digits)\b|\bsig\.? ?figs?\b|\brounded (up |down )?to\b"
     r"|\bdecimal (places?|digits?)\b|±|\+/-|\bplus or minus\b"
-    r"|\bwithin \d+(\.\d+)? ?(%|percent|percentage points?)"
+    r"|\bwithin \d+(\.\d+)? ?(%|percent|percentage points?)(?! of each other)|\broughly accurate"
 )
-# "Roughly accurately" leaves the tolerance to the judge's mood; always state it.
-VAGUE_TOLERANCE = re.compile(r"(?i)\broughly accurate")
 VAGUE = re.compile(r"(?i)completes the requested outcome|\bis helpful\b|helpful suggestions?")
 METHOD = re.compile(
     r"(?i)\b(calls?|called|invokes?|invoked|uses?|used|runs?)\s+`[a-z]+_[a-z_]+`"
@@ -38,15 +36,11 @@ PROVENANCE = re.compile(
     r"|(backed|supported) by (a |an |the |any )?(tool|query|telemetry|data|evidence|transcript|real)"
     r"|absent from (the )?(telemetry|data|results?|tool))\b"
 )
-# The prompt itself asks for a rough figure, so the criterion may state its tolerance.
-ROUGH_ASK = re.compile(
-    r"(?i)\b(rough(ly)?|approximate(ly)?|about\s+how\s+(many|much|high)|ballpark)\b"
-)
 # Categories whose tasks ask for a result that a fact or saved state can back.
 OUTCOME_CATEGORIES = {"prometheus_query", "loki_query", "tempo_query", "investigation"}
 
 HINTS = {
-    "precision-rule": "the judge applies one number rule; state a tolerance only for a rough ask",
+    "precision-rule": "the judge applies one number rule; leave rounding and tolerance out",
     "vague-outcome": "name the entity, number or setting, backed with a fact",
     "method-criterion": "grade the result instead",
     "tool-output-criterion": "state the check as a fact",
@@ -73,13 +67,10 @@ class Finding:
 def lint_problem(problem: Problem, path: Path) -> list[Finding]:
     findings: list[Finding] = []
     has_facts = any(item.fact is not None for item in problem.rubric)
-    rough_ask = bool(ROUGH_ASK.search(problem.statement))
 
     for item in problem.rubric:
         text = item.criterion
-        if VAGUE_TOLERANCE.search(text) or (
-            PRECISION.search(text) and not (rough_ask and item.fact is not None)
-        ):
+        if PRECISION.search(text):
             findings.append(Finding(path, "precision-rule", text))
         for rule, pattern in (
             ("vague-outcome", VAGUE),

@@ -15,7 +15,7 @@ statement: |
   or a lagging background refresh problem.
 checks: []
 rubric:
-- criterion: The final response states the peak cache refresh lag within 5% of the truth.
+- criterion: The final response states the peak cache refresh lag.
   weight: 35
   fact:
     kind: query

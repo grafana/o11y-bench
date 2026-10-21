@@ -10,7 +10,7 @@ statement: |
   to smallest, and say whether memory looks like a strong lead or a weak one.
 checks: []
 rubric:
-- criterion: The final response states the average total resident memory within 5% of the truth.
+- criterion: The final response states the average total resident memory.
   weight: 40
   fact:
     kind: query

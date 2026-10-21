@@ -13,13 +13,13 @@ statement: |
   across all paths combined.
 checks: []
 rubric:
-- criterion: The final response states the total count of 5xx request log lines across all paths within 5% of the truth.
+- criterion: The final response states the total count of 5xx request log lines across all paths.
   weight: 35
   fact:
     kind: query
     backend: loki
     query: sum(count_over_time({job=~".+"} | json | __error__="" | status >= 500 [6h]))
-- criterion: The final response states the count of 5xx request log lines on the worst single path within 5% of the truth.
+- criterion: The final response states the count of 5xx request log lines on the worst single path.
   weight: 35
   fact:
     kind: query

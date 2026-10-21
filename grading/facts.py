@@ -23,7 +23,7 @@ from grading.env_context import (
     fetch_tempo_metrics_instant,
     fetch_tempo_search_traces,
     fetch_tempo_trace,
-    find_trace_example,
+    find_trace_examples,
     resolve_grafana_datasource,
 )
 from grading.helpers import cited_trace_ids
@@ -58,6 +58,7 @@ PREFIX_GROUPED_COUNTS = "Grouped counts from the snapshot window:"
 PREFIX_MATCHING_LOG_TELEMETRY = "Matching log telemetry exists in the snapshot window:"
 PREFIX_GRAFANA_API = "Grafana API response from {path}:"
 PREFIX_EXAMPLE_TRACE = "The example trace the final response cites, read back from Tempo:"
+PREFIX_EXAMPLES_TRACE = "The example traces the final response cites, read back from Tempo:"
 
 MAX_RENDERED_RESULTS = 50
 DEFAULT_TEMPO_LIMIT = 20
@@ -152,16 +153,17 @@ def provenance(fact: FactSpec) -> str:
 def resolve_cited_trace_fact(
     trace_ids: list[str], example: CitedTraceParams | None, ctx: VerifierContext
 ) -> FactResult:
-    """The task's example trace: what it must be, what it shows, and its span tree."""
+    """The task's example traces: what they must be, what each shows, and its span tree. Every
+    cited trace that matches is read back, so a claim is checked against the trace it names."""
     debug: dict[str, Any] = {"trace_ids": trace_ids}
     if example is None:
         return FactResult(summary="", debug=debug, error="no cited_trace check defines the example")
-    found, misses, err = find_trace_example(
+    found, misses, err = find_trace_examples(
         ctx.tempo_url, trace_ids, example.match, example.lookback_hours, ctx.timeout_sec
     )
     if err:
         return FactResult(summary="", debug=debug, error=f"transport: {err}")
-    if found is None:
+    if not found:
         why = (
             f"cites no trace that is in Tempo and matches {example.match}: " + "; ".join(misses)
             if trace_ids
@@ -172,21 +174,33 @@ def resolve_cited_trace_fact(
             debug=debug,
             fails=True,
         )
-    spans, err = fetch_tempo_trace(ctx.tempo_url, found, ctx.timeout_sec)
-    if err:
-        return FactResult(summary="", debug=debug, error=f"transport: {err}")
-    if not spans:
-        return FactResult(
-            summary="",
-            debug=debug,
-            error=f"transport: {found} matched in search but Tempo returned no spans for it",
-        )
-    debug["example"] = found
-    lines = [f"{PREFIX_EXAMPLE_TRACE} {found}, the first cited ID that matches {example.match}."]
-    lines += [f"- {line}" for line in derive_trace_facts(spans)]
+    traces = []
+    for trace_id in found:
+        spans, err = fetch_tempo_trace(ctx.tempo_url, trace_id, ctx.timeout_sec)
+        if err:
+            return FactResult(summary="", debug=debug, error=f"transport: {err}")
+        if not spans:
+            return FactResult(
+                summary="",
+                debug=debug,
+                error=f"transport: {trace_id} matched in search but Tempo returned no spans for it",
+            )
+        traces.append((trace_id, spans))
+    debug["examples"] = found
+    if len(found) == 1:
+        lines = [f"{PREFIX_EXAMPLE_TRACE} {found[0]}, the cited ID that matches {example.match}."]
+    else:
+        lines = [
+            f"{PREFIX_EXAMPLES_TRACE} {', '.join(found)}, the cited IDs that match {example.match}."
+            " A claim about an example trace is checked against the trace it names."
+        ]
     if misses:
-        lines.append("- cited before it: " + "; ".join(misses))
-    lines.append(render_trace_tree(found, spans))
+        lines.append("- cited but not matching: " + "; ".join(misses))
+    for trace_id, spans in traces:
+        if len(found) > 1:
+            lines.append(f"Trace {trace_id}:")
+        lines += [f"- {line}" for line in derive_trace_facts(spans)]
+        lines.append(render_trace_tree(trace_id, spans))
     return FactResult(summary="\n".join(lines), debug=debug)
 
 

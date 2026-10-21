@@ -19,8 +19,7 @@ rubric:
     kind: query
     backend: prometheus
     query: max_over_time(service_cache_refresh_lag_seconds{job="user-service"}[12h])
-- criterion: The final response states the peak user-service p95 latency within 10% of the truth; the
-    peak moves with the query's rate window and step.
+- criterion: The final response states the peak user-service p95 latency.
   weight: 35
   fact:
     kind: query

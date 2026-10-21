@@ -107,10 +107,10 @@ checks:
 ```
 
 `cited_trace` passes when one cited trace is in Tempo over the window and matches `match`, a
-TraceQL spanset filter for what the prompt asked the example to be (failing, slow, on a route). That
-trace is the task's example: the first cited ID that matches. The check and every `cited_trace`
-fact read the same example, so a task has at most one `cited_trace` check, and a `cited_trace` fact
-needs one. Both read only the final response and Tempo, never the agent's tool output, so they hold
+TraceQL spanset filter for what the prompt asked the example to be (failing, slow, on a route). Every
+cited ID that matches is an example, and a `cited_trace` fact reads each one back, so a claim is
+checked against the trace it names. The check and every `cited_trace` fact use the same `match`, so
+a task has at most one `cited_trace` check, and a `cited_trace` fact needs one. Both read only the final response and Tempo, never the agent's tool output, so they hold
 for every harness, and an invented ID fails. A prefix such as `0595f4e0` can't be read back, so it
 doesn't count.
 

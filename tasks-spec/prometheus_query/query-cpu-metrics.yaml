@@ -11,7 +11,7 @@ statement: |
   culprit or a weak lead for the slowdown.
 checks: []
 rubric:
-- criterion: The final response states the average CPU of the hottest job (the top row of the Source of truth) within 5% of the truth.
+- criterion: The final response states the average CPU of the hottest job (the top row of the Source of truth).
   weight: 50
   fact:
     kind: query
