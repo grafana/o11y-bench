@@ -9,7 +9,10 @@ mkdir -p "$GF_PATHS_PROVISIONING"
 /usr/share/grafana/bin/grafana server --homepath=/usr/share/grafana \
     --config=/usr/share/grafana/conf/defaults.ini > /tmp/bake.log 2>&1 &
 pid=$!
-until curl -sf http://localhost:3000/api/health > /dev/null; do sleep 0.1; done
+until curl -sf http://localhost:3000/api/health > /dev/null; do
+    kill -0 "$pid" 2> /dev/null || { cat /tmp/bake.log; echo "Grafana exited before it became healthy" >&2; exit 1; }
+    sleep 0.1
+done
 sleep 1
 kill "$pid"
 wait "$pid" || true

@@ -91,8 +91,8 @@ COPY python/src/o11y_stack /scripts/o11y_stack
 # Seed data at a fixed clock, shifted to the scenario clock at boot (see o11y_stack/seed.py)
 RUN PYTHONPATH=/scripts python3 -m o11y_stack.seed dump
 # The entrypoint probes which flags mcp-grafana accepts; do it once here instead of on every boot
-# (an empty result would silently drop --allowed-hosts and every trial would get a 403, so fail the build)
-RUN /usr/local/bin/mcp-grafana --help > /etc/mcp-grafana-help.txt 2>&1 || true; test -s /etc/mcp-grafana-help.txt
+# (a failed or empty probe would silently drop --allowed-hosts and every trial would get a 403, so fail the build)
+RUN /usr/local/bin/mcp-grafana --help > /etc/mcp-grafana-help.txt 2>&1 && test -s /etc/mcp-grafana-help.txt
 RUN chmod +x /entrypoint.sh /tmp/bake-grafana.sh && /tmp/bake-grafana.sh && rm /tmp/bake-grafana.sh
 
 # Expose ports: Prometheus:9090, Loki:3100, Grafana:3000, Tempo:3200, MCP-Grafana:8080
