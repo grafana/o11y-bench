@@ -13,14 +13,12 @@ from grading.dashboard_snapshot import (
     normalize_token,
     parse_tag_keys,
 )
-from grading.env_context import VerifierContext
-from grading.helpers import prometheus_eval_time_unix
-from grading.models import DashboardItemExpectation, DashboardStateParams, Transcript
+from grading.env_context import VerifierContext, synthetic_eval_time_unix
+from grading.models import DashboardItemExpectation, DashboardStateParams
 
 
 def validate_dashboard_state(
     params: DashboardStateParams,
-    transcript: Transcript,
     ctx: VerifierContext | None,
 ) -> tuple[float, str]:
     snapshot, err = load_dashboard_snapshot(params, ctx)
@@ -59,7 +57,6 @@ def validate_dashboard_state(
                 name_field=name_field,
                 item_kind=item_kind,
                 query_texts_getter=query_texts_getter,
-                transcript=transcript,
                 ctx=ctx,
                 dashboard_variables=snapshot.variables,
             )
@@ -79,7 +76,6 @@ def validate_named_dashboard_item_expectation(
     name_field: str,
     item_kind: str,
     query_texts_getter: Callable[[dict[str, Any]], list[str]],
-    transcript: Transcript,
     ctx: VerifierContext | None,
     dashboard_variables: list[dict[str, Any]],
 ) -> tuple[bool, str]:
@@ -102,7 +98,6 @@ def validate_named_dashboard_item_expectation(
                 expectation,
                 item_kind=item_kind,
                 query_texts=query_texts_getter(item),
-                transcript=transcript,
                 ctx=ctx,
                 dashboard_variables=dashboard_variables,
             )[0]
@@ -120,7 +115,6 @@ def validate_named_dashboard_item_expectation(
         expectation,
         item_kind=label,
         query_texts=query_texts_getter(item),
-        transcript=transcript,
         ctx=ctx,
         dashboard_variables=dashboard_variables,
     )
@@ -132,7 +126,6 @@ def validate_dashboard_item_common(
     *,
     item_kind: str,
     query_texts: list[str],
-    transcript: Transcript,
     ctx: VerifierContext | None,
     dashboard_variables: list[dict[str, Any]],
 ) -> tuple[bool, str]:
@@ -227,10 +220,8 @@ def validate_dashboard_item_common(
                 f"{item_kind} is missing one required saved query: {required_query_failures[0]}"
             )
 
-    eval_end_unix = prometheus_eval_time_unix({}, transcript)
+    eval_end_unix = synthetic_eval_time_unix()
     for index, execute_case in enumerate(expectation.execute_cases, start=1):
-        if eval_end_unix is None:
-            return False, "execute_cases require transcript scenario time."
         ok, explanation = validate_dashboard_execute_case(
             item,
             execute_case,

@@ -397,7 +397,7 @@ def test_trace_search_truth_lists_traces_and_their_matched_spans() -> None:
 
 
 def test_traceql_metrics_truth_is_one_value_per_series() -> None:
-    # The shape Tempo 2.10 returns from /api/metrics/query (checked on a live stack).
+    # The shape Tempo returns from /api/metrics/query.
     payload = {
         "series": [
             {

@@ -5,6 +5,7 @@ import pytest
 from grading import env_context
 from grading.checks import run_checks
 from grading.env_context import VerifierContext
+from grading.helpers import MAX_CITED_TRACES
 from grading.models import CheckItem, Message, Transcript
 
 from .helpers import answer_transcript, fake_tempo
@@ -362,8 +363,8 @@ def test_state_dashboard_execute_case_supports_all_binding() -> None:
     assert "satisfies" in explanations["dashboard state"].lower()
 
 
-def test_a_sixth_cited_trace_is_not_the_example_for_the_check_or_the_facts() -> None:
-    ids = [f"{i:032x}" for i in range(1, 7)]
+def test_a_trace_cited_past_the_limit_is_not_the_example() -> None:
+    ids = [f"{i:032x}" for i in range(1, MAX_CITED_TRACES + 2)]
     check = CheckItem.model_validate(
         {
             "name": "cited trace",
@@ -372,8 +373,8 @@ def test_a_sixth_cited_trace_is_not_the_example_for_the_check_or_the_facts() -> 
             "params": {"mode": "cited_trace", "match": FAILING_ORDER},
         }
     )
-    # Only the sixth ID cited is a failing trace; the example is chosen among the first five.
-    tempo = fake_tempo(set(ids), {ids[5]})
+    # Only the last ID cited is a failing trace; the example comes from the first few IDs.
+    tempo = fake_tempo(set(ids), {ids[-1]})
     with patch("grading.env_context.http_get_json", side_effect=tempo):
         scores, _ = run_checks(
             [check], answer_transcript("Traces " + ", ".join(ids)), VerifierContext(tempo_url="t")

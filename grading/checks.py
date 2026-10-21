@@ -44,7 +44,7 @@ def run_check(
         case CitedTraceParams():
             return validate_cited_trace(check.params, transcript, ctx)
         case DashboardStateParams():
-            return validate_dashboard_state(check.params, transcript, ctx)
+            return validate_dashboard_state(check.params, ctx)
         case DatasourceInventoryStateParams():
             return validate_datasource_inventory(check.params, ctx)
         case DatasourceDetailStateParams():

@@ -47,14 +47,11 @@ def parse_claude_code_jsonl(log_path: Path) -> Transcript:
             msg = event.get("message", {})
             content_blocks = msg.get("content", [])
             text_parts = []
-            thinking_parts = []
             tool_calls = []
 
             for block in content_blocks:
                 if block.get("type") == "text":
                     text_parts.append(block.get("text", ""))
-                elif block.get("type") == "thinking":
-                    thinking_parts.append(block.get("thinking", ""))
                 elif block.get("type") == "tool_use":
                     tool_calls.append(
                         ToolCall(
@@ -68,7 +65,6 @@ def parse_claude_code_jsonl(log_path: Path) -> Transcript:
                 Message(
                     role="assistant",
                     content="\n".join(text_parts) if text_parts else None,
-                    thinking_content="\n".join(thinking_parts) if thinking_parts else None,
                     tool_calls=tool_calls or None,
                 )
             )
@@ -136,7 +132,6 @@ def _parse_atif_steps(steps: list[dict[str, Any]]) -> list[Message]:
                     role=role,
                     content=content,
                     tool_calls=tool_calls or None,
-                    thinking_content=step.get("reasoning_content"),
                 )
             )
             # Emit tool results from observation as separate tool messages

@@ -108,17 +108,15 @@ class DashboardDiff:
     titles_after: dict[str, str] = field(default_factory=dict)
 
     @property
-    def changed_variables(self) -> list[str]:
-        return sorted(self.variables_added + self.variables_removed + self.variables_modified)
-
-    @property
     def changed(self) -> bool:
         return bool(
             self.added
             or self.removed
             or self.modified
             or self.moved
-            or self.changed_variables
+            or self.variables_added
+            or self.variables_removed
+            or self.variables_modified
             or self.settings
         )
 

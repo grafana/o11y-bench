@@ -404,7 +404,6 @@ class Message:
     content: str | None = None
     tool_calls: list[ToolCall] | None = None
     tool_results: list[ToolResult] | None = None
-    thinking_content: str | None = None
 
 
 # Judge transcript budgets, in characters.
