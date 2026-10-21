@@ -3,7 +3,9 @@ import json
 from reporting import compare_report
 
 
-def test_load_job_uses_artifact_reasoning_effort_and_excludes_invalid_infra(tmp_path) -> None:
+def test_load_job_uses_artifact_reasoning_effort_and_excludes_infra_and_grading_errors(
+    tmp_path,
+) -> None:
     job_dir = tmp_path / "job"
     valid_trial = job_dir / "task-a__good"
     (valid_trial / "verifier").mkdir(parents=True)
@@ -55,6 +57,16 @@ def test_load_job_uses_artifact_reasoning_effort_and_excludes_invalid_infra(tmp_
         json.dumps({"score": 0.0, "rubric_passed": 0, "criterion": 0.0})
     )
 
+    # The agent ran fine but the grader could not read a truth: not the agent's 0.75.
+    grading_error_trial = job_dir / "task-a__grader"
+    (grading_error_trial / "verifier").mkdir(parents=True)
+    result = json.loads((valid_trial / "result.json").read_text())
+    result["verifier_result"] = {"rewards": {"reward": 0.75}}
+    (grading_error_trial / "result.json").write_text(json.dumps(result))
+    (grading_error_trial / "verifier" / "grading_details.json").write_text(
+        json.dumps({"score": 0.75, "status": "error", "rubric_passed": 0, "criterion": 0.0})
+    )
+
     data = compare_report.load_job(job_dir, tasks_dir=None)
 
     assert data["model_display"] == "GPT 5.4 Mini (high)"
@@ -62,3 +74,4 @@ def test_load_job_uses_artifact_reasoning_effort_and_excludes_invalid_infra(tmp_
     assert data["tasks_passed"] == 1
     assert data["tasks_consistent"] == 1
     assert data["pass_hat_rate"] == 1.0
+    assert data["task_consistent"] == {"task-a": True}

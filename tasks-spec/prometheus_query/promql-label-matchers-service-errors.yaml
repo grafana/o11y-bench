@@ -12,11 +12,9 @@ statement: |
   the last 24 hours? List the exact backend ``job`` names that had 5xx in that window.
 checks: []
 rubric:
-- criterion: Final response lists the exact backend *-service jobs with 24h HTTP 5xx activity, matching Prometheus
+- criterion: The final response lists exactly the backend jobs in the Source of truth, with no others.
   weight: 75
   fact:
     kind: query
     backend: prometheus
     query: sum by (job) (increase(http_requests_total{status=~"5..",job=~".+-service"}[24h])) > 0
-- criterion: The transcript shows a 24h Prometheus check scoped to backend *-service jobs rather than broad generic error checking or edge-only targets
-  weight: 25

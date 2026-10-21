@@ -11,19 +11,22 @@ statement: |
   services show up, what failed first, and what fields in the trace actually tell you that? Please
   include the trace id for the failed request.
 checks:
-- weight: 55
-  type: grounding
+- name: The final response cites a failed POST /api/orders trace by its full ID
+  weight: 10
+  type: state
   params:
-    prefix_min_chars: 8
-    assistant_scope: all
-    mode: tool_trace_id
-  name: Response cites a trace ID that appears in Tempo tool results
+    mode: cited_trace
+    match: '{ span.http.route = "/api/orders" && status = error }'
 rubric:
-- criterion: The final response distinguishes the span where the error originates from upstream spans that only reflect the failed HTTP response
-  weight: 10.0
-- criterion: The response ties the walkthrough to POST /api/orders or order/checkout wording
-  weight: 15.0
-- criterion: The response cites span-level evidence (HTTP status on spans, OTel status code, or named attributes - not only service names)
-  weight: 30.0
-- criterion: Any asserted failing service or hop in the final answer appears in trace or tool output in the transcript
-  weight: 15.0
+- criterion: The services the final response names for its example trace are that trace's services in the Source of truth
+  weight: 15
+  fact:
+    kind: cited_trace
+- criterion: Where the final response says its example request first failed is that trace's error origin in the Source of truth, named by its operation or its service, and it treats webapp and api-gateway spans as only relaying the failed HTTP response
+  weight: 30
+  fact:
+    kind: cited_trace
+- criterion: The trace fields the final response points to as showing the failure (span status, HTTP status code) agree with the failing spans of its example trace in the Source of truth
+  weight: 20
+  fact:
+    kind: cited_trace

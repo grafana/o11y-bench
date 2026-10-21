@@ -7,14 +7,17 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from grading.env_context import VerifierContext
+from grading.judge import grading_model
 from grading.models import Problem
 from grading.transcript_parser import parse_transcript
-from grading.verifier import grade
+from grading.verifier import GradeResult, grade, read_truth, write_outputs
 from reporting import report as suite_report
 from reporting import run_report
 from reporting.report_paths import (
@@ -32,9 +35,18 @@ from .config import (
     provider_variants,
     resolve_suite_dir,
 )
-from .harbor import build_command, build_resume_command, run_preflight
+from .harbor import (
+    build_command,
+    build_resume_command,
+    run_preflight,
+    write_builtin_prompt_template,
+)
 from .harbor import run as run_harbor
-from .regrade_stack import problem_requires_live_stack, running_regrade_stack
+from .regrade_stack import (
+    problem_reads_final_state,
+    problem_requires_live_stack,
+    running_regrade_stack,
+)
 from .resume import (
     ResumeTrialAction,
     compute_task_checksums,
@@ -406,27 +418,14 @@ def _iter_trial_dirs(job_dir: Path) -> list[Path]:
 
 
 def _write_regrade_outputs(
-    trial_dir: Path,
-    *,
-    score: float,
-    rewards: dict[str, float | int],
-    explanations: dict[str, str],
-    task_checksum: str | None,
+    trial_dir: Path, result: GradeResult, *, task_checksum: str | None
 ) -> None:
-    verifier_dir = trial_dir / "verifier"
-    verifier_dir.mkdir(parents=True, exist_ok=True)
-    (verifier_dir / "reward.txt").write_text(str(score))
-
-    details: dict[str, Any] = dict(rewards)
-    for criterion, explanation in explanations.items():
-        details[f"explanation:{criterion}"] = explanation
-    (verifier_dir / "grading_details.json").write_text(json.dumps(details, indent=2))
-
+    write_outputs(trial_dir / "verifier", result)
     result_path = trial_dir / "result.json"
     payload = json.loads(result_path.read_text())
     if task_checksum:
         payload["task_checksum"] = task_checksum
-    payload.setdefault("verifier_result", {}).setdefault("rewards", {})["reward"] = score
+    payload.setdefault("verifier_result", {}).setdefault("rewards", {})["reward"] = result.score
     now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     payload["verifier"] = {"started_at": now, "finished_at": now}
     result_path.write_text(json.dumps(payload, indent=4) + "\n")
@@ -438,53 +437,83 @@ def regrade_job_dir(
     tasks_dir: Path,
     task_checksums: dict[str, str],
     quiet: bool = False,
+    offline: bool = False,
+    n_concurrent: int = 1,
 ) -> Path | None:
-    model = os.getenv("GRADING_MODEL", "claude-haiku-4-5-20251001")
+    model = grading_model()
     scenario_time_iso = resolve_scenario_time()
 
     updated = 0
+    rows: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
     trials_by_task: dict[str, list[Path]] = {}
     for trial_dir in _iter_trial_dirs(job_dir):
         result_path = trial_dir / "result.json"
-        if not result_path.exists():
-            continue
-        payload = json.loads(result_path.read_text())
-        task_name = payload.get("task_name")
+        task_name = (
+            json.loads(result_path.read_text()).get("task_name") if result_path.exists() else None
+        )
         if isinstance(task_name, str) and task_name:
             trials_by_task.setdefault(task_name, []).append(trial_dir)
+        else:
+            skipped.append({"trial": trial_dir.name, "reason": "no task name in result.json"})
 
-    for task_name, trial_dirs in sorted(trials_by_task.items()):
+    def regrade_task(task_name: str, trial_dirs: list[Path]) -> tuple[int, list[Any], list[Any]]:
+        task_rows: list[dict[str, Any]] = []
+        task_skipped: list[dict[str, str]] = []
         problem_path = tasks_dir / task_name / "tests" / "problem.yaml"
         if not problem_path.exists():
-            continue
-        with open(problem_path) as file_obj:
-            problem = Problem(**yaml.safe_load(file_obj))
-        with bound_scenario_time(scenario_time_iso):
-            if problem_requires_live_stack(problem):
-                with running_regrade_stack(
-                    task_dir=tasks_dir / task_name,
-                    trial_dir=trial_dirs[0],
-                    scenario_time_iso=scenario_time_iso,
-                ):
-                    updated += _regrade_trial_group(
-                        trial_dirs=trial_dirs,
-                        task_name=task_name,
-                        problem=problem,
-                        model=model,
-                        task_checksums=task_checksums,
-                    )
-            else:
-                updated += _regrade_trial_group(
-                    trial_dirs=trial_dirs,
-                    task_name=task_name,
-                    problem=problem,
-                    model=model,
-                    task_checksums=task_checksums,
-                )
+            task_skipped = [
+                {"trial": d.name, "reason": f"task not in {tasks_dir}"} for d in trial_dirs
+            ]
+            return 0, task_rows, task_skipped
+        problem = Problem(**yaml.safe_load(problem_path.read_text()))
+        task_offline = offline or problem_reads_final_state(problem)
+        regrade_group = partial(
+            _regrade_trial_group,
+            trial_dirs=trial_dirs,
+            problem=problem,
+            model=model,
+            task_checksum=task_checksums.get(task_name),
+            offline=task_offline,
+            rows=task_rows,
+            skipped=task_skipped,
+        )
+        if task_offline or not problem_requires_live_stack(problem):
+            return regrade_group(ctx=None), task_rows, task_skipped
+        with running_regrade_stack(
+            task_dir=tasks_dir / task_name,
+            trial_dir=trial_dirs[0],
+            scenario_time_iso=scenario_time_iso,
+        ) as ctx:
+            return regrade_group(ctx=ctx), task_rows, task_skipped
 
+    # Each task boots its own stack, so tasks grade concurrently; the clock is shared.
+    with bound_scenario_time(scenario_time_iso), ThreadPoolExecutor(n_concurrent) as pool:
+        futures = [pool.submit(regrade_task, *item) for item in sorted(trials_by_task.items())]
+        try:
+            for future in futures:
+                count, task_rows, task_skipped = future.result()
+                updated += count
+                rows += task_rows
+                skipped += task_skipped
+        except BaseException:
+            for future in futures:
+                future.cancel()
+            raise
+    rows.sort(key=lambda row: row["trial"])
+    skipped.sort(key=lambda row: row["trial"])
+
+    (job_dir / "regrade.json").write_text(
+        json.dumps({"model": model, "offline": offline, "rows": rows, "skipped": skipped}, indent=2)
+        + "\n"
+    )
     report_path = finalize_job_dir(job_dir, tasks_dir, task_checksums)
     if not quiet:
-        print(f"{job_dir.name}: regraded {updated} trial(s)")
+        changed = sum(1 for row in rows if row["before"] != row["after"])
+        print(
+            f"{job_dir.name}: regraded {updated} trial(s), {changed} item(s) changed, "
+            f"{len(skipped)} skipped (see regrade.json)"
+        )
         if report_path:
             print(f"Report: {report_path}")
     return report_path
@@ -493,38 +522,78 @@ def regrade_job_dir(
 def _regrade_trial_group(
     *,
     trial_dirs: list[Path],
-    task_name: str,
     problem: Problem,
     model: str,
-    task_checksums: dict[str, str],
+    task_checksum: str | None,
+    offline: bool,
+    rows: list[dict[str, Any]],
+    skipped: list[dict[str, str]],
+    ctx: VerifierContext | None,
 ) -> int:
     updated = 0
     for trial_dir in trial_dirs:
         logs_dir = trial_dir / "agent"
         if not logs_dir.exists():
+            skipped.append({"trial": trial_dir.name, "reason": "no agent transcript"})
             continue
-        transcript = parse_transcript(logs_dir)
-        score, rewards, _checks_passed, explanations = grade(problem, transcript, model)
-        _write_regrade_outputs(
-            trial_dir,
-            score=score,
-            rewards=rewards,
-            explanations=explanations,
-            task_checksum=task_checksums.get(task_name),
+        details_path = trial_dir / "verifier" / "grading_details.json"
+        before: dict[str, Any] = (
+            json.loads(details_path.read_text()) if details_path.exists() else {}
+        )
+        truth = read_truth(trial_dir / "verifier")
+        if offline and truth is None:
+            skipped.append({"trial": trial_dir.name, "reason": "no verifier/truth.json"})
+            continue
+        result = grade(
+            problem,
+            parse_transcript(logs_dir),
+            model,
+            ctx=ctx,
+            truth=truth if offline else None,
+            previous=before if offline else None,
+        )
+        _write_regrade_outputs(trial_dir, result, task_checksum=task_checksum)
+        rows.extend(
+            {
+                "trial": trial_dir.name,
+                "task": problem.id,
+                "item": item.name,
+                "before": before.get(item.name),
+                "after": item.score,
+                "outcome": item.outcome,
+                "quote": item.quote,
+                "explanation": item.explanation,
+            }
+            for item in result.items
         )
         updated += 1
     return updated
 
 
-def execute_regrade(target_dir: Path, *, tasks_dir: Path, quiet: bool = False) -> None:
+def execute_regrade(
+    target_dir: Path,
+    *,
+    tasks_dir: Path,
+    quiet: bool = False,
+    offline: bool = False,
+    n_concurrent: int = 1,
+) -> None:
     task_checksums = compute_task_checksums(tasks_dir)
     job_dirs = _iter_job_dirs(target_dir)
     if not job_dirs:
         raise SystemExit(f"No job dirs found under {target_dir}")
 
-    run_preflight(quiet=quiet)
+    if not offline:
+        run_preflight(quiet=quiet)
     for job_dir in job_dirs:
-        regrade_job_dir(job_dir, tasks_dir=tasks_dir, task_checksums=task_checksums, quiet=quiet)
+        regrade_job_dir(
+            job_dir,
+            tasks_dir=tasks_dir,
+            task_checksums=task_checksums,
+            quiet=quiet,
+            offline=offline,
+            n_concurrent=n_concurrent,
+        )
 
     if len(job_dirs) > 1:
         suite_report.write_report(target_dir, tasks_dir=tasks_dir, quiet=quiet)
@@ -545,6 +614,8 @@ def execute_job(
     )
     scenario_time_iso = resolve_scenario_time()
     os.environ["O11Y_SCENARIO_TIME_ISO"] = scenario_time_iso
+    if spec.agent and not dry_run:
+        write_builtin_prompt_template(spec, scenario_time_iso)
     task_names = _selected_task_names(spec)
     n_tasks = len(task_names)
 

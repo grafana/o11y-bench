@@ -85,6 +85,10 @@ run = "uv run mypy"
 description = "Run Ruff lint rules"
 run = "uv run ruff check ."
 
+[tasks."lint:tasks"]
+description = "Lint task specs for checks that grade the method instead of the outcome"
+run = "uv run python -m scripts.lint_tasks"
+
 [tasks.format]
 description = "Format Python files with Ruff"
 run = "uv run ruff format ."

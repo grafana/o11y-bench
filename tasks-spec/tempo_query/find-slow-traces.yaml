@@ -5,20 +5,35 @@ tags:
 - tempo
 - latency
 - performance
-statement: Anything in our traces pointing to unusually slow payment or checkout paths? Which services keep showing up in those slow requests? I care about what shows up across roughly the last day of traffic, not a tiny recent slice. Please include a trace id for one concrete slow example if you find one.
+statement: Anything in our traces pointing to unusually slow checkout (POST /api/orders) or payment (POST /api/payments) requests? Which services keep showing up in those slow requests? I care about what shows up across roughly the last day of traffic, not a tiny recent slice. Please include a trace id for one concrete slow example if you find one.
 checks:
-- weight: 55
-  type: grounding
+- name: The final response cites a slow checkout or payment trace by its full ID
+  weight: 10
+  type: state
   params:
-    prefix_min_chars: 8
-    mode: tool_trace_id
-  name: Response cites a trace ID that appears in Tempo tool results
+    mode: cited_trace
+    match: '{ name =~ "handle POST /api/(orders|payments)" && duration > 300ms }'
 rubric:
-- criterion: The final response points to at least one concrete slow trace using a trace id, a named operation, or an explicit duration figure
-  weight: 5.0
-- criterion: The final response discusses slow requests using duration or latency wording
-  weight: 15.0
-- criterion: The final response ties slowness to payment or checkout (path, operation, or checkout wording) and names at least one concrete service in those slow paths, plus either a second service, an upstream or downstream hop, or wording about recurrence or a pattern
-  weight: 15.0
-- criterion: The final response identifies `order-service` (and ideally the `handle POST /api/orders` operation) as the backend actually carrying the slow checkout requests, not just upstream relays like webapp or api-gateway
-  weight: 10.0
+- criterion: 'The final response identifies the backend carrying the slow requests on each path it reports,
+    as the Source of truth shows: order-service''s `handle POST /api/orders` for checkout and payment-service''s
+    `handle POST /api/payments` for payments, not only the webapp or api-gateway relays'
+  weight: 25
+  fact:
+    kind: query
+    backend: tempo
+    query: '{ resource.service.name =~ "order-service|payment-service" && name =~ "handle POST /api/(orders|payments)"
+      && duration > 300ms } | select(resource.service.name, name)'
+    limit: 20
+- criterion: The services the final response says keep showing up in the slow requests are the services
+    of the slow traces in the Source of truth
+  weight: 15
+  fact:
+    kind: query
+    backend: tempo
+    query: '{ resource.service.name =~ "order-service|payment-service" && name =~ "handle POST /api/(orders|payments)"
+      && duration > 300ms } | select(resource.service.name, name)'
+    limit: 20
+- criterion: What the final response says about its example slow trace, its duration and which service or span the time goes to, agrees with that trace in the Source of truth
+  weight: 15
+  fact:
+    kind: cited_trace

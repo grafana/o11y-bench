@@ -1,71 +1,9 @@
 import re
-from collections.abc import Iterator
-from typing import Any
 
-from grading.env_context import synthetic_eval_time_unix
-from grading.models import ToolCall, Transcript
-
-_TRACE_ID_HEX_32 = re.compile(r"(?<![0-9a-fA-F])([0-9a-fA-F]{32})(?![0-9a-fA-F])")
-# Tempo search JSON often omits a leading zero (31 hex chars); get-trace uses 32.
-_TRACE_ID_JSON = re.compile(
-    r'"(?:traceID|traceId)"\s*:\s*"([0-9a-fA-F]{31,32})"',
-    re.IGNORECASE,
-)
-
-
-def prometheus_eval_time_unix(params: dict[str, Any], _transcript: Transcript) -> float | None:
-    raw = params.get("time_unix")
-    if raw is not None:
-        return float(raw)
-    return synthetic_eval_time_unix()
-
-
-def final_assistant_text(transcript: Transcript) -> str | None:
-    for msg in reversed(transcript.messages):
-        if msg.role == "assistant" and msg.content:
-            return msg.content
-    return None
-
-
-def assistant_scope_note(assistant_scope: str) -> str:
-    return "all assistant turns" if assistant_scope.strip().lower() == "all" else "final response"
-
-
-def assistant_text_blobs(transcript: Transcript, assistant_scope: str) -> list[str]:
-    scope = (assistant_scope or "final").strip().lower()
-    if scope not in {"final", "all"}:
-        scope = "final"
-
-    if scope == "final":
-        text = final_assistant_text(transcript)
-        return [text] if text else []
-
-    blobs: list[str] = []
-    for msg in transcript.messages:
-        if msg.role == "assistant" and msg.content:
-            blobs.append(msg.content)
-    return blobs
-
-
-def iter_tool_calls(transcript: Transcript) -> Iterator[ToolCall]:
-    for msg in transcript.messages:
-        if msg.role == "assistant" and msg.tool_calls:
-            yield from msg.tool_calls
-
-
-def tool_call_id_to_name(transcript: Transcript) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for tool_call in iter_tool_calls(transcript):
-        out[tool_call.id] = tool_call.name
-    return out
-
-
-def as_name_set(raw: str | list[str] | tuple[str, ...] | set[str] | None) -> set[str]:
-    if raw is None:
-        return set()
-    if isinstance(raw, str):
-        return {raw}
-    return {str(value) for value in raw}
+# Tempo prints trace IDs with leading zeros dropped, so a shorter hex string (25+) is still a full ID.
+_TRACE_ID_HEX = re.compile(r"(?<![0-9a-fA-F])([0-9a-fA-F]{25,32})(?![0-9a-fA-F])")
+# The check and the facts look at the same leading IDs, so they agree on the example.
+MAX_CITED_TRACES = 5
 
 
 def require_stack_url(url: str, env_name: str) -> str | None:
@@ -74,63 +12,7 @@ def require_stack_url(url: str, env_name: str) -> str | None:
     return f"{env_name} is not set."
 
 
-def trace_ids_from_tool_content(content: str) -> set[str]:
-    ids: set[str] = set()
-    for regex in (_TRACE_ID_HEX_32, _TRACE_ID_JSON):
-        for match in regex.finditer(content):
-            raw = match.group(1).lower()
-            ids.add(raw)
-            if len(raw) == 31:
-                ids.add(raw.zfill(32))
-    return ids
-
-
-def trace_id_variants_for_prefix_match(candidate_ids: set[str]) -> set[str]:
-    out: set[str] = set()
-    for trace_id in candidate_ids:
-        lowered = trace_id.lower()
-        out.add(lowered)
-        stripped = lowered.lstrip("0")
-        if stripped and stripped != lowered:
-            out.add(stripped)
-    return out
-
-
-def response_cites_trace_id_prefix(
-    text_blobs: list[str],
-    candidate_ids: set[str],
-    prefix_min_chars: int,
-) -> tuple[bool, str | None]:
-    expanded = trace_id_variants_for_prefix_match(candidate_ids)
-    for response_text in text_blobs:
-        haystack = response_text.lower()
-        for trace_id in expanded:
-            if len(trace_id) < prefix_min_chars:
-                continue
-            if not re.fullmatch(r"[0-9a-f]+", trace_id):
-                continue
-            for prefix_len in range(len(trace_id), prefix_min_chars - 1, -1):
-                prefix = trace_id[:prefix_len]
-                if prefix in haystack:
-                    return True, prefix
-    return False, None
-
-
-def tempo_tool_matches_name(
-    tool_name: str,
-    allowed_names: set[str] | None,
-    name_prefix: str,
-) -> bool:
-    if allowed_names is not None:
-        return tool_name in allowed_names
-    if tool_name.startswith(name_prefix):
-        return True
-    # mcp-grafana exposes Tempo under two naming conventions: proxied tools are
-    # prefixed (tempo_traceql-search) while native tools infix the datasource
-    # (search_tempo_traces). Matching the prefix alone silently harvests zero
-    # trace IDs from a native-tool transcript, which scores a correct answer 0.
-    return name_prefix.strip("_") in tool_name.split("_")
-
-
-def additional_trace_id_tool_names(params: dict[str, Any]) -> set[str]:
-    return as_name_set(params.get("additional_tool_names"))
+def cited_trace_ids(answer: str) -> list[str]:
+    """The first full trace IDs the answer cites, in order, as 32 hex. A short prefix can't be read back."""
+    ids = dict.fromkeys(m.lower().zfill(32) for m in _TRACE_ID_HEX.findall(answer))
+    return list(ids)[:MAX_CITED_TRACES]

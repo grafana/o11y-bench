@@ -15,15 +15,24 @@ statement: |
   or a lagging background refresh problem.
 checks: []
 rubric:
-- criterion: The final response states Peak cache refresh lag roughly accurately.
+- criterion: The final response states the peak cache refresh lag.
   weight: 35
   fact:
     kind: query
     backend: prometheus
     query: max_over_time(service_cache_refresh_lag_seconds{job="user-service"}[12h])
-- criterion: The final response identifies `user-service` as the owner of the incident and frames it as a lagging cache-refresh problem rather than a payments-path outage
+- criterion: The final response identifies `user-service` as the owner of the incident, the only job whose
+    cache refresh lag rises in the Source of truth, and frames it as a lagging cache-refresh problem rather
+    than a payments-path outage
   weight: 20
-- criterion: The final response addresses whether GET `/api/users` latency was affected during the cache-refresh incident, and if so distinguishes modest or brief elevation from a sustained request-path outage instead of treating the issue as log-only background noise
+  fact:
+    kind: query
+    backend: prometheus
+    query: max by (job) (max_over_time(service_cache_refresh_lag_seconds[12h]))
+- criterion: The final response addresses whether GET `/api/users` latency was affected during the cache-refresh
+    incident, and if so distinguishes modest or brief elevation from a sustained request-path outage instead
+    of treating the issue as log-only background noise
   weight: 20
-- criterion: The final response identifies the immediately preceding deployment as a `user-service` rollout to `v2.5.0`
+- criterion: The final response identifies the immediately preceding deployment as a `user-service` rollout
+    to `v2.5.0`
   weight: 25

@@ -9,16 +9,27 @@ statement: |
   What do recent order-service requests look like in tracing? A trace id would be great if you
   find one, plus whatever quick read you get from it.
 checks:
-- weight: 85
-  type: grounding
+- name: The final response cites a recent order-service trace by its full ID
+  weight: 10
+  type: state
   params:
-    prefix_min_chars: 8
-    mode: tool_trace_id
-  name: Response cites a trace ID that appears in Tempo tool results
+    mode: cited_trace
+    match: '{ resource.service.name = "order-service" }'
+    lookback_hours: 1
 rubric:
-- criterion: The final response includes at least one trace identifier and describes what appears inside that trace
-  weight: 10.0
-- criterion: 'Satisfied if the final response summarizes traces with **any** of: approximate count, representative latencies, or error status breakdown'
-  weight: 5.0
-- criterion: The final response names order-service and references tracing (trace id, spans, or Tempo results)
-  weight: 15.0
+- criterion: What the final response says about its example trace's route, services and duration agrees with that trace in the Source of truth
+  weight: 25
+  fact:
+    kind: cited_trace
+- criterion: The final response's read of recent order-service traces agrees with the Source of truth
+    on the routes it names and on typical order-service latency. The Source of truth is a sample of up
+    to 20 recent traces, so it does not bound how many traces the response counts, and an outlier, slow
+    or failing request the response found elsewhere in the window does not contradict it.
+  weight: 25
+  fact:
+    kind: query
+    backend: tempo
+    query: '{ resource.service.name = "order-service" && kind = server } | select(span.http.route, status,
+      duration)'
+    limit: 20
+    lookback_hours: 1

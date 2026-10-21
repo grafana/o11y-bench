@@ -65,6 +65,9 @@ jobs:
       - name: Check Python formatting
         run: mise run format:check
 
+      - name: Lint task specs
+        run: mise run lint:tasks
+
   static-analysis:
     name: Static Analysis
     runs-on: ubuntu-latest

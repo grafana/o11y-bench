@@ -17,11 +17,11 @@ rubric:
     kind: query
     backend: loki
     query: max(max_over_time({job=~".+"} | json | unwrap duration_ms | __error__="" [6h]))
-- criterion: The final response identifies the slowest API paths using only real endpoints that are supported by the transcript's Loki evidence
+- criterion: The final response names the slowest API paths, led by the top path in the Source of truth, which ranks paths by p95 request duration.
   weight: 30.0
-- criterion: The final response separates aggregate slowness per endpoint from specific example requests (for example worst path vs concrete slow calls)
-  weight: 5.0
+  fact:
+    kind: query
+    backend: loki
+    query: topk(3, quantile_over_time(0.95, {job=~".+"} | json | path=~".+" | unwrap duration_ms | __error__="" [6h]) by (path))
 - criterion: The response cites numeric durations
   weight: 25.0
-- criterion: Slow endpoints cited in the final answer reference log lines, counts, or query results from the transcript
-  weight: 15.0

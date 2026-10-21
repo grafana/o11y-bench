@@ -122,3 +122,28 @@ def test_load_atif_trajectory_accepts_legacy_harbor_results(tmp_path) -> None:
     assert [message["type"] for message in transcript] == ["user", "assistant", "tool_result"]
     assert transcript[1]["message"]["content"][0]["name"] == "query_loki"
     assert transcript[2]["content"] == "error log"
+
+
+def test_agent_html_renders_as_text_not_markup() -> None:
+    # The answer is model output; a report someone opens must not run what it says.
+    html = run_report.render_transcript(
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "**Peak** <img src=x onerror=alert(1)> [x](javascript:alert(1))"
+                                "\n\n<script>x()</script>"
+                            ),
+                        }
+                    ]
+                },
+            }
+        ]
+    )
+    assert "<strong>Peak</strong>" in html
+    assert "<img" not in html and "<script" not in html and "javascript:" not in html
+    assert "&lt;img src=x onerror=alert(1)&gt;" in html

@@ -162,12 +162,13 @@ def convert_messages_to_steps(
             pending_ai = message
             continue
         if isinstance(message, ToolMessage):
-            pending_tool_results.append(
-                {
-                    "source_call_id": message.tool_call_id,
-                    "content": message_text(message.content),
-                }
-            )
+            result: dict[str, Any] = {
+                "source_call_id": message.tool_call_id,
+                "content": message_text(message.content),
+            }
+            if message.status == "error":
+                result["extra"] = {"is_error": True}
+            pending_tool_results.append(result)
 
     flush_pending()
     session_id = str(uuid.uuid4())

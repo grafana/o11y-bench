@@ -47,8 +47,9 @@ At a high level, a benchmark run does the following:
 The default agent lives in `agents/o11y_agent.py`, but you can also run Harbor built-in agents or
 your own custom Harbor agent class by import path. See the [Harbor agent docs](https://www.harborframework.com/docs/agents) for more on agent types.
 
-Each run also persists one scenario clock in `scenario_time.txt` under the job or suite directory.
-That keeps reruns and regrades aligned to the same synthetic data window.
+Each job sets one scenario clock (`O11Y_SCENARIO_TIME_ISO`, default: now). The agent is told it is
+the current time, telemetry ends at it and facts are evaluated at it. The data is the same relative
+to any clock, so runs started at different times, and regrades on a fresh stack, see the same numbers.
 
 ## Requirements
 
@@ -288,7 +289,6 @@ LOCAL_MCP_GRAFANA=/tmp/mcp-grafana-branch mise run bench:job -- --model openai/g
 To A/B two builds, run them as separate jobs **sequentially** with distinct
 `--job-name` values. The sidecar image tag is shared, so each run rebuilds it —
 running two arms concurrently would swap one arm's binary out from under it.
-Pin `O11Y_SCENARIO_TIME_ISO` across both so they see identical synthetic data.
 
 
 ## Running Your Own Models
@@ -492,6 +492,28 @@ uv run python -m o11y_bench regrade --jobs-dir jobs --job-name <job-name> --path
 
 `regrade` reruns the verifier against saved transcripts and rewrites verifier outputs in place.
 For tasks whose checks need the live Grafana stack, it also starts a temporary local sidecar stack.
+Each task boots its own stack; pass `--n-concurrent N` to regrade tasks in parallel. Set
+`O11Y_SCENARIO_TIME_ISO` to the job's own clock (the `Current time:` in a transcript) to keep
+absolute timestamps aligned.
+
+Add `--offline` to regrade from each trial's saved `verifier/truth.json` without starting the
+stack. State checks keep their saved results. Trials without `truth.json` (runs from before 1.1)
+are skipped, so regrade them live. Every regrade writes `regrade.json` to the job directory with
+the before and after score of each item.
+
+## Grading
+
+The judge model is `DEFAULT_GRADING_MODEL` in `grading/judge.py`. `regrade` honours
+`GRADING_MODEL=<model>[@effort]`; generated tasks pin the default in `task.toml`.
+It grades the final response against each rubric criterion and its source of truth. Each
+item in `grading_details.json` records an outcome (`pass`, `wrong`, `not_stated`, `no_answer`,
+`ungrounded`, or `error/*`). A trial with an `error/*` outcome has `status: error` and is left out
+of pass rates until it is regraded. See [grading/README.md](grading/README.md) for details.
+
+Scores from 1.1 are not comparable with 1.0.
+
+Lint task specs with `mise run lint:tasks`. It flags criteria that grade the method (which tool
+was called) instead of the outcome.
 
 ## Manual Reporting Commands
 
@@ -522,9 +544,13 @@ After completing a benchmark run, you can submit your results to the
 To submit:
 
 1. Fork the [submission repo](https://huggingface.co/datasets/grafanalabs/o11y-bench-leaderboard)
-2. Create a branch and add your completed job directory under `submissions/o11y-bench/1.0/<agent>__<model>/`
+2. Create a branch and add your completed job directory under `submissions/o11y-bench/1.1/<agent>__<model>/`
 3. Include a `metadata.yaml` with agent and model info
 4. Open a Pull Request
+
+Submit the whole job directory, including each trial's `verifier/` output, graded with the judge the
+tasks ship with. Regrade any trial whose `verifier/grading_details.json` has `status: error`
+before submitting. 1.1 results are ranked separately from 1.0; the two are not comparable.
 
 See the [submission repo README](https://huggingface.co/datasets/grafanalabs/o11y-bench-leaderboard) for
 the full submission structure, validation rules, and example layout.

@@ -3,51 +3,45 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
+from grading.env_context import VerifierContext
 from grading.models import (
+    DashboardDiffFact,
+    DashboardFact,
     DashboardStateParams,
-    DatasourceDetailStateParams,
-    DatasourceInventoryStateParams,
+    GrafanaApiFact,
     Problem,
-    TempoTraceServiceInventoryStateParams,
-    ToolTraceIdGroundingParams,
 )
 
 
 def problem_requires_live_stack(problem: Problem) -> bool:
-    if any(item.fact is not None for item in problem.rubric):
-        return True
-    return any(check_requires_live_stack(check.params) for check in problem.checks)
+    """Facts and checks both read the stack; only a judge-only task regrades without one."""
+    return bool(problem.checks) or any(item.fact is not None for item in problem.rubric)
 
 
-def check_requires_live_stack(params: object) -> bool:
-    match params:
-        case ToolTraceIdGroundingParams():
-            return False
-        case (
-            DashboardStateParams()
-            | DatasourceInventoryStateParams()
-            | DatasourceDetailStateParams()
-            | TempoTraceServiceInventoryStateParams()
-        ):
-            return True
-        case _:
-            return True
+STACK_IMAGE = "o11y-bench-o11y-stack:latest"
+# Covers data generation and the Tempo metrics warm-up.
+STACK_READY_TIMEOUT_SEC = 300.0
+
+
+def problem_reads_final_state(problem: Problem) -> bool:
+    """Dashboard and Grafana API reads grade what the agent left behind, which a fresh stack
+    does not have: those tasks regrade from their saved truths."""
+    return any(isinstance(check.params, DashboardStateParams) for check in problem.checks) or any(
+        isinstance(item.fact, DashboardFact | DashboardDiffFact | GrafanaApiFact)
+        for item in problem.rubric
+    )
 
 
 @contextmanager
 def running_regrade_stack(
-    *,
-    task_dir: Path,
-    trial_dir: Path,
-    scenario_time_iso: str,
-    image: str = "o11y-bench-o11y-stack:latest",
-    timeout_sec: float = 150.0,
-) -> Iterator[None]:
+    *, task_dir: Path, trial_dir: Path, scenario_time_iso: str
+) -> Iterator[VerifierContext]:
+    """Boot a sidecar for one task and yield a context that reads it (so tasks can run at once)."""
     setup_path = task_dir / "environment" / "setup.json"
     artifacts_dir = trial_dir / "artifacts" / "regrade-sidecar"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -58,7 +52,6 @@ def running_regrade_stack(
         "docker",
         "run",
         "-d",
-        "--rm",
         "--name",
         container_name,
         "-e",
@@ -72,31 +65,25 @@ def running_regrade_stack(
             for port in (3000, 9090, 3100, 3200, 8080)
             for arg in ("-p", f"{bind_host}::{port}" if bind_host else f"{port}")
         ],
-        image,
+        STACK_IMAGE,
     ]
-    subprocess.run(["docker", "rm", "-f", container_name], check=False, capture_output=True)
     subprocess.run(command, check=True, capture_output=True, text=True)
 
-    previous_env = {name: os.environ.get(name) for name in _STACK_ENV_NAMES}
     try:
-        ports = {
-            "GRAFANA_URL": f"http://{docker_host_endpoint(container_name, 3000)}",
-            "PROMETHEUS_URL": f"http://{docker_host_endpoint(container_name, 9090)}",
-            "LOKI_URL": f"http://{docker_host_endpoint(container_name, 3100)}",
-            "TEMPO_URL": f"http://{docker_host_endpoint(container_name, 3200)}",
-            "MCP_URL": f"http://{docker_host_endpoint(container_name, 8080)}/mcp",
-        }
-        wait_for_http_ok(f"{ports['MCP_URL'][:-4]}/", timeout_sec=timeout_sec)
-        os.environ.update(ports)
-        yield
+        wait_for_http_ok(
+            f"http://{docker_host_endpoint(container_name, 8080)}/",
+            timeout_sec=STACK_READY_TIMEOUT_SEC,
+            alive=lambda: container_running(container_name),
+        )
+        yield VerifierContext(
+            grafana_url=f"http://{docker_host_endpoint(container_name, 3000)}",
+            prometheus_url=f"http://{docker_host_endpoint(container_name, 9090)}",
+            loki_url=f"http://{docker_host_endpoint(container_name, 3100)}",
+            tempo_url=f"http://{docker_host_endpoint(container_name, 3200)}",
+        )
     finally:
         save_container_logs(container_name, artifacts_dir / "docker.log")
         subprocess.run(["docker", "rm", "-f", container_name], check=False, capture_output=True)
-        for name, value in previous_env.items():
-            if value is None:
-                os.environ.pop(name, None)
-            else:
-                os.environ[name] = value
 
 
 def regrade_bind_host() -> str:
@@ -141,7 +128,20 @@ def docker_host_endpoint(container_name: str, container_port: int) -> str:
     return f"{host}:{int(port)}"
 
 
-def wait_for_http_ok(url: str, *, timeout_sec: float) -> None:
+def container_running(container_name: str) -> bool:
+    result = subprocess.run(
+        ["docker", "inspect", "-f", "{{.State.Running}}", container_name],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip() == "true"
+
+
+def wait_for_http_ok(
+    url: str, *, timeout_sec: float, alive: Callable[[], bool] = lambda: True
+) -> None:
+    """Wait until `url` answers; fail at once when `alive` says the server's process is gone."""
     deadline = time.monotonic() + timeout_sec
     last_error = ""
     while time.monotonic() < deadline:
@@ -159,6 +159,8 @@ def wait_for_http_ok(url: str, *, timeout_sec: float) -> None:
             last_error = str(exc)
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             last_error = str(exc)
+        if not alive():
+            raise RuntimeError(f"Stack exited before {url} answered: {last_error or 'no response'}")
         time.sleep(2)
     raise TimeoutError(f"Timed out waiting for stack at {url}: {last_error or 'no response'}")
 
@@ -171,6 +173,3 @@ def save_container_logs(container_name: str, output_path: Path) -> None:
         text=True,
     )
     output_path.write_text((result.stdout or "") + (result.stderr or ""))
-
-
-_STACK_ENV_NAMES = ("GRAFANA_URL", "PROMETHEUS_URL", "LOKI_URL", "TEMPO_URL", "MCP_URL")

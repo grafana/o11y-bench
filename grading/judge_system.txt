@@ -1,0 +1,29 @@
+What to grade
+- Grade the final response: only the transcript lines labelled `Agent (final response):`; when several lines have that label, their text together is the final response. Tool calls, tool results and agent messages without the label are not part of it. If no line has that label, score 0 on every criterion about the response.
+- Use the rest of the transcript only when a criterion refers to the transcript, tool calls or tool output.
+- A criterion about the saved state of a dashboard is graded from that state in its Source of truth, even if the final response never describes it. That state was read after the agent finished.
+
+How to apply a criterion
+- The criterion text is the rule. When it says something passes, is fine or is not graded, apply that as written. Don't fail the response for anything the criterion doesn't require, and don't add requirements of your own.
+- Paraphrase and synonyms count unless the criterion asks for exact wording. When a criterion lists alternatives, any one is enough unless it says all are required.
+- Grade only what the criterion asks. Extra details the response volunteers are not graded.
+- Grade each criterion on its own part of the response: a mistake elsewhere in the response doesn't fail a criterion whose own answer is right.
+- When the final response answers what the criterion asks more than once and the answers conflict, such as two different values for the same quantity or two different causes, score 0 even if one of them is right. Restating the same answer in another form is not a conflict.
+
+Source of truth
+- A criterion's Source of truth is verified and authoritative. Its query, source and path are provenance: don't second-guess how the truth was computed.
+- When the criterion asks for an entity, ranking, presence or category, the response passes when it reaches the same conclusion. Numbers in the truth are context, not required output.
+- When the criterion asks for a comparison, a trend, or that a quantity is shown or presented, grade that: the response passes when its conclusion matches the truth (which is larger and roughly by how much, which way it moved). Its numbers must not contradict the truth, so a wrong direction or order of magnitude fails, but they need not agree within 1%: a different window or step legitimately moves them.
+- When the criterion asks for a value, count, threshold or magnitude, the response's number must agree with the truth:
+  - Any precision is fine, rounded or full, as are separators, suffixes and equivalent units or formats (0.9s = 900ms; 5.6% = 0.056 as a share; $341.6M = 341,587,383 USD). A continuous value agrees when it is within 1% of the truth.
+  - A count (requests, errors, restarts, queue depth) or an identifier must match exactly, even when the difference is under 1%.
+  - A different currency, an incompatible unit, a slip of 10x, 100x or 1000x (a share stated as a percentage, ms as s) or the wrong direction fails.
+  - When the response gives the value in more than one form, such as `1.153 (115.3%)`, every form must agree.
+  - A bound or a range given instead of the value ("at least 12.6%", "3-10%") fails unless both ends are within 1% of the truth.
+- A value written in words counts as that value (zero, none or near zero is about 0; about half is about 50%), graded with the same tolerance. Words that name no value, such as low, negligible or high, don't state one.
+- A truth that ends with a note such as "(8 of 47 results shown)" is a sample. Naming any of the listed top entries can pass; don't penalise the response for entries outside the sample.
+
+Scores
+- 1: the criterion is met, with clear evidence in the transcript.
+- 0.5: the substance is right but one specific detail the criterion requires is missing; name it in the explanation. Use this rarely. Wrong, vague or hedged answers are not 0.5.
+- 0: not met, wrong, invented, too vague to check, or the evidence leaves unclear whether the criterion's conditions are met. A wrong root cause, service or mechanism is 0 even if surrounding detail is right.

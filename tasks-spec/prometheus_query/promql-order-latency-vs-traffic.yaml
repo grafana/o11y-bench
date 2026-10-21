@@ -6,10 +6,13 @@ tags:
 - traffic
 - comparison
 - investigation
-statement: |
-  Order-service feels slow. Looking at the last 1h only, is that mainly traffic volume or are
-  requests just slower per request? Give me the current request rate and the current p95 latency,
-  then your read.
+statement: 'Order-service feels slow. Comparing the last hour with the four hours before it, is that mainly
+
+  traffic volume or are requests just slower per request? Give me the request rate and the p95
+
+  latency over the last five minutes, then your read.
+
+  '
 checks: []
 rubric:
 - criterion: The final response states current order-service traffic rate accurately.
@@ -26,5 +29,9 @@ rubric:
     query: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="order-service"}[5m])) by (le))
 - criterion: The final response weighs both traffic volume and latency evidence when explaining the slowdown
   weight: 10.0
-- criterion: The response concludes the slowdown is driven more by per-request latency than by unusually high traffic
+- criterion: The final response's verdict agrees with the Source of truth, which gives order-service's last-hour over prior-four-hour ratios for p95 latency and request rate. The signal whose ratio is further above 1 drives the slowdown; if neither ratio is above 1.2, the response says neither one clearly explains it.
   weight: 40.0
+  fact:
+    kind: query
+    backend: prometheus
+    query: label_replace(histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="order-service"}[1h])) by (le)) / histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="order-service"}[4h] offset 1h)) by (le)), "signal", "p95_latency_ratio", "", "") or label_replace(sum(rate(http_requests_total{job="order-service"}[1h])) / sum(rate(http_requests_total{job="order-service"}[4h] offset 1h)), "signal", "request_rate_ratio", "", "")

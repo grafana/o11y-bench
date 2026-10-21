@@ -160,7 +160,7 @@ GF_INSTALL_PLUGINS="" \
 GF_PLUGINS_PREINSTALL_DISABLED="true" \
 GF_ANALYTICS_CHECK_FOR_UPDATES="false" \
 GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES="false" \
-/usr/share/grafana/bin/grafana-server \
+/usr/share/grafana/bin/grafana server \
     --homepath=/usr/share/grafana \
     --config=/usr/share/grafana/conf/defaults.ini \
     > "$GRAFANA_LOG" 2>&1 &

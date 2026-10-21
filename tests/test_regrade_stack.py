@@ -87,3 +87,16 @@ def test_wait_for_http_ok_times_out_when_nothing_listens(monkeypatch) -> None:
     monkeypatch.setattr(regrade_stack.time, "sleep", lambda _s: None)
     with pytest.raises(TimeoutError, match="Connection refused"):
         regrade_stack.wait_for_http_ok("http://x/", timeout_sec=0.01)
+
+
+def test_wait_for_http_ok_fails_at_once_when_the_stack_died(monkeypatch) -> None:
+    def refuse(*a, **k):
+        raise urllib.error.URLError("[Errno 111] Connection refused")
+
+    def wait(_seconds: float) -> None:
+        raise AssertionError("kept polling a stack that is gone")
+
+    monkeypatch.setattr(regrade_stack.urllib.request, "urlopen", refuse)
+    monkeypatch.setattr(regrade_stack.time, "sleep", wait)
+    with pytest.raises(RuntimeError, match="Stack exited"):
+        regrade_stack.wait_for_http_ok("http://x/", timeout_sec=300, alive=lambda: False)

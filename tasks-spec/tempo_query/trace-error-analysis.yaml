@@ -9,19 +9,30 @@ statement: |
   Over roughly the last day, are we seeing failed or errored traces anywhere? Which services look
   bad? If you find a concrete example, include a trace id. If not, just say you didn't find one.
 checks:
-- weight: 55
-  type: grounding
+- name: The final response cites an errored trace by its full ID
+  weight: 10
+  type: state
   params:
-    prefix_min_chars: 8
-    mode: tool_trace_id
-  name: Response cites a trace ID that appears in Tempo tool results
+    mode: cited_trace
+    match: '{ status = error }'
 rubric:
-- criterion: The final response correctly states that failed or errored traces are visible in Tempo over the requested window
+- criterion: The final response correctly states that failed or errored traces are visible in Tempo over
+    the requested window
   weight: 25
   fact:
     kind: query
     backend: tempo
     query: '{ span:status = error }'
     limit: 5
-- criterion: The final response names at least one affected service and gives a quick trace-backed read on what the error trace shows
-  weight: 20.0
+- criterion: The final response names the services that look bad, and they are ones whose spans have error
+    status in the Source of truth; it does not present webapp or api-gateway spans as the failing ones
+  weight: 25
+  fact:
+    kind: query
+    backend: tempo
+    query: '{ status = error } | select(name, resource.service.name)'
+    limit: 20
+- criterion: Each span or service the final response says fails in its example error trace has a span with error status there in the Source of truth
+  weight: 20
+  fact:
+    kind: cited_trace

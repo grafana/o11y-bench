@@ -69,12 +69,15 @@ class O11yBenchAgent(BaseAgent):
         reasoning_effort: str = "off",
         temperature: float | None = None,
         extra_env: dict[str, str] | None = None,
+        # Weakened control build for grading calibration (`--ak no_tools=true`).
+        no_tools: bool = False,
         **kwargs: Any,
     ):
         super().__init__(logs_dir=logs_dir, model_name=model_name, **kwargs)
         self.reasoning_effort = reasoning_effort
         self.temperature = temperature
         self._extra_env = extra_env or {}
+        self.no_tools = no_tools
 
     @staticmethod
     def name() -> str:
@@ -143,6 +146,8 @@ class O11yBenchAgent(BaseAgent):
         if self.temperature is not None:
             env["TEMPERATURE"] = str(self.temperature)
         env.update(self._extra_env)
+        if self.no_tools:
+            env["O11Y_CONTROL_NO_TOOLS"] = "1"
 
         self.logger.info(f"Running agent runner with model={model}")
         result = await environment.exec(command=build_runner_command(), env=env)

@@ -59,8 +59,8 @@ statement: |
   that compares payment-service against order-service backlog depth over time, a stat panel titled
   exactly "Peak Payment Retry Backlog" that surfaces the payment-service peak over the dashboard
   time range, and a second stat panel titled exactly "Order Spillover Share" that shows roughly how
-  large the order-service peak backlog was relative to the payment-service peak. Keep the existing
-  panels in place.
+  large the order-service peak backlog was relative to the payment-service peak, as a ratio where
+  1.0 means equal peaks. Keep the existing panels in place.
 checks:
 - weight: 40
   type: state
@@ -99,12 +99,9 @@ checks:
       datasource_type: prometheus
       execute_cases:
       - result_kind: prometheus_vector
+        # Both backlogs are 0 at the end of the window; ten minutes into the incident they differ.
+        eval_offset_sec: 10200
         canonical_query: service_retry_queue_depth{job=~"payment-service|order-service"}
-        distinct_label_values:
-        - name: job
-          values_exact:
-          - payment-service
-          - order-service
   name: The Retry Backlog panel compares payment-service and order-service backlog depth over time using the saved backlog metric
 - weight: 10
   type: state
@@ -130,9 +127,19 @@ checks:
       datasource_type: prometheus
       execute_cases:
       - result_kind: prometheus_vector
-        canonical_query: max_over_time(service_retry_queue_depth{job="order-service"}[$__range]) / max_over_time(service_retry_queue_depth{job="payment-service"}[$__range])
+        canonical_query: max(max_over_time(service_retry_queue_depth{job="order-service"}[$__range])) / max(max_over_time(service_retry_queue_depth{job="payment-service"}[$__range]))
         series_count_exact: 1
   name: The Order Spillover Share panel compares order-service peak backlog against payment-service peak backlog over the dashboard time range
 rubric:
 - criterion: The final response explains that the saved dashboard now compares payment-service vs order-service backlog, surfaces the payment-service peak, and shows the order-service spillover share, without claiming unrelated dashboard changes
   weight: 10
+  fact:
+    kind: resource
+    resource: dashboard_diff
+    uid: service-overview
+- criterion: Panels were added, and the existing Request Rate, Error Rate and P95 Latency panels were not modified or removed, and no dashboard setting or variable changed. An unchanged dashboard fails
+  weight: 15
+  fact:
+    kind: resource
+    resource: dashboard_diff
+    uid: service-overview

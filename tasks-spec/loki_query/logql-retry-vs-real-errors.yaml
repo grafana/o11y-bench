@@ -28,13 +28,5 @@ rubric:
     query: sum(count_over_time({job=~"order-service|payment-service", level="error"}[6h]))
 - criterion: The final response states whether retry-style log noise is present and describes what those lines look like
   weight: 15.0
-- criterion: The final response names at least one concrete backend failure signature (database timeout, HTTP 500, HTTP 502, or similar) separate from retries
-  weight: 15.0
-- criterion: The final response explains how retry chatter differs from hard failures in the logs
-  weight: 10.0
 - criterion: The final response states whether retries or hard failures dominate the incident picture
   weight: 10.0
-- criterion: The response contrasts retries vs real failures
-  weight: 30.0
-- criterion: The answer distinguishes retry warnings from hard request failures rather than collapsing them into one bucket
-  weight: 15.0

@@ -28,5 +28,3 @@ rubric:
   weight: 10
 - criterion: The final response compares the next-worst service against the top backlog and explains whether it looks like smaller spillover or a comparable co-primary issue
   weight: 15
-- criterion: The response uses retry, queue, or backlog wording tied to the incident rather than only reporting bare numbers
-  weight: 5

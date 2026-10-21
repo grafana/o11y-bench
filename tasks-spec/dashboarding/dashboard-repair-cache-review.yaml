@@ -111,10 +111,6 @@ checks:
       execute_cases:
       - result_kind: prometheus_vector
         canonical_query: service_cache_refresh_lag_seconds{job="user-service"}
-        distinct_label_values:
-        - name: job
-          values_exact:
-          - user-service
   name: The repaired cache lag panels use the user-service cache lag metric instead of the retry backlog metric
 - weight: 20
   type: state
@@ -165,3 +161,13 @@ checks:
 rubric:
 - criterion: The final response explains that the saved dashboard was repaired to focus on the user-service cache incident and does not claim unrelated dashboard changes
   weight: 10
+  fact:
+    kind: resource
+    resource: dashboard_diff
+    uid: user-access-cache-review
+- criterion: The dashboard was edited, and the existing User P95 Latency panel was not modified or removed, and no dashboard setting other than the annotations changed. An unchanged dashboard fails
+  weight: 15
+  fact:
+    kind: resource
+    resource: dashboard_diff
+    uid: user-access-cache-review

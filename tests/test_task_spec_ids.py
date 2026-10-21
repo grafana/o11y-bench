@@ -8,7 +8,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from grading.models import CheckItem, Problem, RubricItem
+from grading.models import CheckItem, DashboardItemExpectation, Problem, RubricItem
 from scripts.sync_tasks import task_spec_ids
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,7 +54,6 @@ def test_check_model_rejects_unknown_type() -> None:
             }
         )
     message = str(excinfo.value)
-    assert "grounding" in message
     assert "state" in message
 
 
@@ -86,3 +85,59 @@ def test_rubric_item_rejects_unknown_fact_kind() -> None:
     message = str(excinfo.value)
     assert "query" in message
     assert "resource" in message
+
+
+def test_a_cited_trace_fact_needs_the_one_check_that_defines_the_example() -> None:
+    check = {
+        "name": "cites a failing trace",
+        "weight": 1,
+        "type": "state",
+        "params": {"mode": "cited_trace", "match": "{ status = error }"},
+    }
+    fact = {"criterion": "Places the error origin.", "weight": 1, "fact": {"kind": "cited_trace"}}
+    base = {"id": "demo", "category": "tempo_query", "statement": "x"}
+    with pytest.raises(ValidationError, match="needs a cited_trace check"):
+        Problem.model_validate({**base, "rubric": [fact]})
+    with pytest.raises(ValidationError, match="at most one cited_trace check"):
+        Problem.model_validate({**base, "checks": [check, {**check, "name": "again"}]})
+    assert Problem.model_validate({**base, "checks": [check], "rubric": [fact]}).trace_example
+
+
+def _query(backend: str, **extra: object) -> dict:
+    return {"kind": "query", "backend": backend, "query": "{}", **extra}
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        pytest.param(
+            {"rubric": [{"criterion": "c", "weight": 0}]}, "greater than 0", id="zero-weight"
+        ),
+        pytest.param(
+            {"rubric": [{"criterion": "c", "weight": 1}, {"criterion": "c", "weight": 1}]},
+            "must be unique",
+            id="repeated-name",
+        ),
+        pytest.param(
+            {"rubric": [{"criterion": "c", "weight": 1, "fact": _query("tempo", time_unix=1)}]},
+            "time_unix applies to prometheus and loki",
+            id="time-on-tempo",
+        ),
+        pytest.param(
+            {"rubric": [{"criterion": "c", "weight": 1, "fact": _query("loki", limit=3)}]},
+            "apply to tempo facts",
+            id="limit-on-loki",
+        ),
+    ],
+)
+def test_a_spec_that_would_silently_misgrade_cannot_be_written(
+    overrides: dict, message: str
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        Problem.model_validate({"id": "demo", "category": "x", "statement": "x", **overrides})
+
+
+def test_a_dashboard_expectation_may_require_a_falsy_value() -> None:
+    DashboardItemExpectation.model_validate({"name": "service", "multi": False})
+    with pytest.raises(ValidationError, match="at least one constraint"):
+        DashboardItemExpectation.model_validate({})

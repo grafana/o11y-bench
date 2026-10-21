@@ -11,15 +11,11 @@ statement: |
   show rollout events in that window and whether that looks broad or limited.
 checks: []
 rubric:
-- criterion: The final response states Deployment rollout event count accurately.
-  weight: 55
+- criterion: The final response names the services with rollout events in the Source of truth, and no others
+  weight: 75
   fact:
     kind: query
     backend: loki
-    query: sum(count_over_time({job=~"order-service|payment-service",level="info"} | json | __error__="" | event="deployment" [6h]))
-- criterion: The final response names both order-service and payment-service as the services with rollout events in the window, if supported by the logs
-  weight: 20
+    query: sum by (job) (count_over_time({job=~".+",level="info"} | json | __error__="" | event="deployment" [6h]))
 - criterion: The response characterizes the rollout scope as limited to those backend services rather than a fleet-wide deployment wave
   weight: 15
-- criterion: The response frames the finding as deployment evidence relevant to the incident rather than a generic log inventory
-  weight: 10
