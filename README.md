@@ -544,9 +544,13 @@ After completing a benchmark run, you can submit your results to the
 To submit:
 
 1. Fork the [submission repo](https://huggingface.co/datasets/grafanalabs/o11y-bench-leaderboard)
-2. Create a branch and add your completed job directory under `submissions/o11y-bench/1.0/<agent>__<model>/`
+2. Create a branch and add your completed job directory under `submissions/o11y-bench/1.1/<agent>__<model>/`
 3. Include a `metadata.yaml` with agent and model info
 4. Open a Pull Request
+
+Submit the whole job directory, including each trial's `verifier/` output, graded with the judge the
+tasks ship with. Regrade any trial whose `verifier/grading_details.json` has `status: error`
+before submitting. 1.1 results are ranked separately from 1.0; the two are not comparable.
 
 See the [submission repo README](https://huggingface.co/datasets/grafanalabs/o11y-bench-leaderboard) for
 the full submission structure, validation rules, and example layout.
