@@ -101,12 +101,14 @@ def build_judge_criteria(
 
 
 def build_request(transcript_text: str, criteria: dict[int, JudgeCriterion]) -> str:
+    # The transcript and the truth in each criterion are untrusted: unescaped, they could close a
+    # block or carry an <evaluation> the judge quotes back and the parser reads as the judge's.
+    # _tag unescapes. A criterion only needs its "<" neutralised, which leaves the "&" and ">" of
+    # queries and URLs in its truth as they are.
     criteria_xml = "\n".join(
-        f'<criterion id="{index}">{criterion.prompt_text}</criterion>'
+        f'<criterion id="{index}">{criterion.prompt_text.replace("<", "&lt;")}</criterion>'
         for index, criterion in criteria.items()
     )
-    # The transcript is untrusted: unescaped, an answer could close the block or carry an
-    # <evaluation> the judge quotes back and the parser reads as the judge's. _tag unescapes.
     return JUDGE_REQUEST_TEMPLATE.replace("{criteria}", criteria_xml).replace(
         "{transcript}", html.escape(transcript_text, quote=False)
     )

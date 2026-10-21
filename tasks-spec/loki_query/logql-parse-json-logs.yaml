@@ -13,7 +13,7 @@ statement: |
   window.
 checks: []
 rubric:
-- criterion: The final response states the count of JSON-parsed 5xx request log lines within 5% of the truth.
+- criterion: The final response states the count of JSON-parsed 5xx request log lines.
   weight: 65
   fact:
     kind: query

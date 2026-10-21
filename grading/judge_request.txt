@@ -4,6 +4,8 @@
 
 Grade the agent in the transcript above against each criterion below.
 
+In the transcript, & < > are written as &amp; &lt; &gt;, and in the criteria < is written as &lt;. Read them as the plain characters.
+
 <criteria>
 {criteria}
 </criteria>

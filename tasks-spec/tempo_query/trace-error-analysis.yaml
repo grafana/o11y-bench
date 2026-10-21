@@ -24,8 +24,8 @@ rubric:
     backend: tempo
     query: '{ span:status = error }'
     limit: 5
-- criterion: The services the final response says look bad are ones whose spans have error status in the
-    Source of truth, and it does not present webapp or api-gateway spans as the failing ones
+- criterion: The final response names the services that look bad, and they are ones whose spans have error
+    status in the Source of truth; it does not present webapp or api-gateway spans as the failing ones
   weight: 25
   fact:
     kind: query

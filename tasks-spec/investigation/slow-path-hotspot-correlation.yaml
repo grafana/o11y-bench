@@ -25,16 +25,14 @@ checks:
     match: '{ span.http.route = "/api/orders" && duration > 1s }'
     lookback_hours: 6
 rubric:
-- criterion: The final response states the slow-request count for the dominant slow path within 5% of
-    the truth.
+- criterion: The final response states the slow-request count for the dominant slow path.
   weight: 30
   fact:
     kind: query
     backend: loki
     query: sum(count_over_time({job=~".+"} | json | __error__="" | path="/api/orders" | duration_ms >=
       1000 [6h]))
-- criterion: The final response states the dominant slow path's share of all >1s request logs within 5%
-    of the truth.
+- criterion: The final response states the dominant slow path's share of all >1s request logs.
   weight: 25
   fact:
     kind: query
