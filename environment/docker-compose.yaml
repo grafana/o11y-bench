@@ -27,6 +27,7 @@ services:
     image: o11y-bench-o11y-stack:latest
     environment:
       O11Y_SCENARIO_TIME_ISO: "${O11Y_SCENARIO_TIME_ISO}"
+      GOMAXPROCS: "${O11Y_STACK_GOMAXPROCS:-2}"
     volumes:
       - ./setup.json:/task/setup.json:ro
       - ${HOST_ARTIFACTS_PATH:-./artifacts}:/logs/artifacts
@@ -36,6 +37,9 @@ services:
       timeout: 10s
       retries: 60
       start_period: 90s
+      # Probe quickly while starting: the stack is ready in about a second, so the 5s interval
+      # would otherwise be the boot time.
+      start_interval: 100ms
     networks:
       harbor-shared:
         aliases:

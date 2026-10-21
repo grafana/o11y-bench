@@ -1,0 +1,11 @@
+# Grafana settings shared by the image build (which pre-migrates the database) and the entrypoint.
+export GF_PATHS_PROVISIONING="/etc/grafana/provisioning"
+export GF_PATHS_PLUGINS="/var/lib/grafana/plugins"
+export GF_PATHS_DATA="/dev/shm/grafana"
+export GF_AUTH_ANONYMOUS_ENABLED="true"
+export GF_AUTH_ANONYMOUS_ORG_ROLE="Admin"
+export GF_AUTH_BASIC_ENABLED="false"
+export GF_INSTALL_PLUGINS=""
+export GF_PLUGINS_PREINSTALL_DISABLED="true"
+export GF_ANALYTICS_CHECK_FOR_UPDATES="false"
+export GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES="false"

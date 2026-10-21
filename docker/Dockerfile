@@ -85,10 +85,22 @@ COPY loki-config.yaml /etc/loki/config.yaml
 COPY tempo.yaml /etc/tempo/tempo.yaml
 COPY datasources.yaml /etc/grafana/provisioning/datasources/datasources.yaml
 COPY entrypoint.sh /entrypoint.sh
+COPY grafana-env.sh /etc/grafana/o11y-env.sh
+COPY bake-grafana.sh /tmp/bake-grafana.sh
 COPY python/src/o11y_stack /scripts/o11y_stack
-RUN chmod +x /entrypoint.sh
+# Seed data at a fixed clock, shifted to the scenario clock at boot (see o11y_stack/seed.py)
+RUN PYTHONPATH=/scripts python3 -m o11y_stack.seed dump
+# The entrypoint probes which flags mcp-grafana accepts; do it once here instead of on every boot
+# (a failed or empty probe would silently drop --allowed-hosts and every trial would get a 403, so fail the build)
+RUN /usr/local/bin/mcp-grafana --help > /etc/mcp-grafana-help.txt 2>&1 && test -s /etc/mcp-grafana-help.txt
+RUN chmod +x /entrypoint.sh /tmp/bake-grafana.sh && /tmp/bake-grafana.sh && rm /tmp/bake-grafana.sh
 
 # Expose ports: Prometheus:9090, Loki:3100, Grafana:3000, Tempo:3200, MCP-Grafana:8080
 EXPOSE 9090 3100 3000 3200 8080
+
+# Five Go services share the host with other trials' stacks: capping each at 2 threads' worth of
+# parallelism cuts boot CPU by about 15% and an 8-way parallel boot from 4.4 s to 3.9 s.
+# Override with O11Y_STACK_GOMAXPROCS (compose and regrade pass it through).
+ENV GOMAXPROCS=2
 
 ENTRYPOINT ["/entrypoint.sh"]

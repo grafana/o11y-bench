@@ -77,6 +77,10 @@ Optional environment variables:
   Use this for OpenAI-compatible endpoints.
 - `O11Y_SCENARIO_TIME_ISO`
   Override the scenario clock for debugging.
+- `O11Y_STACK_GOMAXPROCS`
+  Threads each Go service in the stack may run in parallel (default `2`). Two keeps parallel
+  boots fast when several trials share a machine; on a dedicated runner set it to the core
+  count.
 
 ## Setup
 

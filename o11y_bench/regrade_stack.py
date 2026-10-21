@@ -56,6 +56,11 @@ def running_regrade_stack(
         container_name,
         "-e",
         f"O11Y_SCENARIO_TIME_ISO={scenario_time_iso}",
+        *(
+            ["-e", f"GOMAXPROCS={procs}"]
+            if (procs := os.environ.get("O11Y_STACK_GOMAXPROCS"))
+            else []
+        ),
         "-v",
         f"{setup_path.resolve()}:/task/setup.json:ro",
         "-v",
@@ -139,7 +144,10 @@ def container_running(container_name: str) -> bool:
 
 
 def wait_for_http_ok(
-    url: str, *, timeout_sec: float, alive: Callable[[], bool] = lambda: True
+    url: str,
+    *,
+    timeout_sec: float,
+    alive: Callable[[], bool] = lambda: True,
 ) -> None:
     """Wait until `url` answers; fail at once when `alive` says the server's process is gone."""
     deadline = time.monotonic() + timeout_sec
@@ -161,7 +169,7 @@ def wait_for_http_ok(
             last_error = str(exc)
         if not alive():
             raise RuntimeError(f"Stack exited before {url} answered: {last_error or 'no response'}")
-        time.sleep(2)
+        time.sleep(0.1)
     raise TimeoutError(f"Timed out waiting for stack at {url}: {last_error or 'no response'}")
 
 

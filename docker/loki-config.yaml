@@ -34,6 +34,14 @@ memberlist:
 # Query frontend - use explicit address
 frontend:
   address: 127.0.0.1
+  scheduler_address: 127.0.0.1:9096
+
+query_scheduler:
+  use_scheduler_ring: false
+
+frontend_worker:
+  scheduler_address: 127.0.0.1:9096
+  dns_lookup_duration: 1s
 
 # Fast startup: minimize lifecycler delays
 ingester:
