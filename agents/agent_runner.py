@@ -1,6 +1,8 @@
 # /// script
 # dependencies = [
-#   "litellm==1.106.0",
+#   "litellm==1.106.2",
+#   # Vertex AI authentication; the base litellm package does not install google-auth.
+#   "google-auth==2.62.0",
 #   # litellm needs mcp 2.x; the runner uses its client API (read/write streams, snake_case fields)
 #   "mcp==2.3.0",
 # ]
@@ -235,7 +237,7 @@ def effort_off_settings(model: str) -> dict[str, Any]:
     if "claude-sonnet-5" in model:
         # Rejects "disabled"; this is its "off" (short between-tool updates may still appear).
         return {"thinking": {"type": "between_tools"}}
-    if re.search(r"claude-(opus|fable)-5|gpt-6\.1", model):
+    if re.search(r"claude-(opus|fable)-5|gpt-6\.1|gemini-4-argon", model):
         raise ValueError(f"{model} cannot turn thinking off; use --reasoning-effort low or default")
     if re.search(r"gpt-(5\.[4-9]|6)", model) or model.startswith("fireworks_ai/"):
         return {"reasoning_effort": "none"}
@@ -251,10 +253,11 @@ def build_litellm_kwargs(
     litellm_kwargs: dict[str, Any] = {
         "model": model,
         "drop_params": True,
-        "cache_control_injection_points": [
-            {"location": "message", "role": "system"},
-        ],
     }
+    if model.startswith("anthropic/"):
+        litellm_kwargs["cache_control_injection_points"] = [
+            {"location": "message", "role": "system"},
+        ]
     if tools:
         litellm_kwargs["tools"] = tools
     if reasoning_effort == "off":
