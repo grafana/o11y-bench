@@ -1,6 +1,6 @@
 # /// script
 # dependencies = [
-#   "litellm==1.107.0.dev3",
+#   "litellm==1.106.2",
 #   # Vertex AI authentication; the base litellm package does not install google-auth.
 #   "google-auth==2.62.0",
 #   # litellm needs mcp 2.x; the runner uses its client API (read/write streams, snake_case fields)
