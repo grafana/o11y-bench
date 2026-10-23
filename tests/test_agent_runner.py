@@ -85,6 +85,25 @@ def test_build_litellm_kwargs_prefers_reasoning_effort_over_temperature() -> Non
     assert "temperature" not in result
 
 
+def test_build_litellm_kwargs_keeps_reasoning_and_temperature_for_fireworks() -> None:
+    model = "fireworks_ai/accounts/example/deployments/my-deployment"
+
+    result = agent_runner.build_litellm_kwargs(model, [], "low", "0")
+
+    assert result["reasoning_effort"] == "low"
+    assert result["allowed_openai_params"] == ["reasoning_effort"]
+    assert result["temperature"] == 0.0
+
+
+def test_build_litellm_kwargs_turns_fireworks_reasoning_off() -> None:
+    model = "fireworks_ai/accounts/example/deployments/my-deployment"
+
+    result = agent_runner.build_litellm_kwargs(model, [], "off", None)
+
+    assert result["reasoning_effort"] == "none"
+    assert result["allowed_openai_params"] == ["reasoning_effort"]
+
+
 @pytest.mark.parametrize(
     ("model", "expected"),
     [

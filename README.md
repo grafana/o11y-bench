@@ -70,6 +70,7 @@ Minimum environment variables:
   - `ANTHROPIC_API_KEY`
   - `GOOGLE_API_KEY` or `GEMINI_API_KEY`
   - `OPENROUTER_API_KEY` — run any model available on [OpenRouter](https://openrouter.ai/)
+  - `FIREWORKS_API_KEY` — run Fireworks serverless models or account deployments
 
 Optional environment variables:
 
@@ -315,6 +316,22 @@ Set `OPENROUTER_API_KEY` in your environment, then:
 ```bash
 mise run bench:job -- --model openrouter/deepseek/deepseek-v3.2 --job-name openrouter-deepseek-v3-2
 ```
+
+### Fireworks Models And Deployments
+
+Set `FIREWORKS_API_KEY`, use LiteLLM's `fireworks_ai/` prefix, and pass the full Fireworks
+resource name for an account deployment:
+
+```bash
+mise run bench:job -- \
+  --model fireworks_ai/accounts/example/deployments/my-deployment \
+  --reasoning-effort low
+```
+
+The default LiteLLM-backed runner forwards Fireworks credentials under both the Fireworks and
+LiteLLM environment-variable names. Explicit reasoning levels are also preserved for account
+deployments, which are not present in LiteLLM's static model capability map. This provider-specific
+handling does not apply to the alternate LangChain example agent.
 
 ### Dry Run
 
