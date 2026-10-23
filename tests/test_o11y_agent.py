@@ -8,6 +8,7 @@ from harbor.models.agent.context import AgentContext
 
 from agents.langchain_o11y_agent import LangChainO11yBenchAgent
 from agents.o11y_agent import (
+    VERTEX_CREDENTIALS_CONTAINER_PATH,
     VIEWER_COMMAND_STDOUT_PATH,
     O11yBenchAgent,
     build_runner_command,
@@ -101,6 +102,46 @@ async def test_run_passes_through_scenario_clock_env(
     _, call_env = env.exec_calls[0]
     assert call_env["O11Y_SCENARIO_TIME_ISO"] == "2026-04-04T10:05:14Z"
     assert "TEMPERATURE" not in call_env
+
+
+@pytest.mark.anyio
+async def test_vertex_setup_uploads_adc_and_run_passes_vertex_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credentials = tmp_path / "adc.json"
+    credentials.write_text("{}")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(credentials))
+    monkeypatch.setenv("VERTEXAI_PROJECT", "vertex-project")
+    monkeypatch.setenv("VERTEXAI_LOCATION", "global")
+
+    agent = O11yBenchAgent(logs_dir=tmp_path, model_name="vertex_ai/gemini-4-argon")
+    env: Any = MockEnvironment(MockExecResult(return_code=0))
+    context = AgentContext()
+
+    await agent.setup(env)
+    await agent.run("do the thing", env, context)
+
+    assert (credentials, VERTEX_CREDENTIALS_CONTAINER_PATH) in env.upload_calls
+    _, call_env = env.exec_calls[-1]
+    assert call_env["MODEL"] == "vertex_ai/gemini-4-argon"
+    assert call_env["GOOGLE_APPLICATION_CREDENTIALS"] == VERTEX_CREDENTIALS_CONTAINER_PATH
+    assert call_env["VERTEXAI_PROJECT"] == "vertex-project"
+    assert call_env["VERTEXAI_LOCATION"] == "global"
+
+
+@pytest.mark.anyio
+async def test_vertex_setup_rejects_missing_explicit_credentials(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    missing = tmp_path / "missing.json"
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(missing))
+    agent = O11yBenchAgent(logs_dir=tmp_path, model_name="vertex_ai/gemini-4-argon")
+    env: Any = MockEnvironment(MockExecResult(return_code=0))
+
+    with pytest.raises(FileNotFoundError, match="GOOGLE_APPLICATION_CREDENTIALS"):
+        await agent.setup(env)
 
 
 @pytest.mark.anyio

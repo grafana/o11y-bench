@@ -68,7 +68,9 @@ Minimum environment variables:
 - Provider key(s) for the model you want to run:
   - `OPENAI_API_KEY`
   - `ANTHROPIC_API_KEY`
-  - `GOOGLE_API_KEY` or `GEMINI_API_KEY`
+  - `GOOGLE_API_KEY` or `GEMINI_API_KEY` for Google AI Studio
+  - Vertex AI: Google Application Default Credentials plus `VERTEXAI_PROJECT` and
+    `VERTEXAI_LOCATION`
   - `OPENROUTER_API_KEY` — run any model available on [OpenRouter](https://openrouter.ai/)
 
 Optional environment variables:
@@ -182,7 +184,7 @@ mise run bench:job -- --model openai/gpt-5.4-mini --jobs-dir /tmp/o11y-bench-job
 | Claude Haiku 5.x | `thinking: {"type": "disabled"}` |
 | Claude Sonnet 5.x | `thinking: {"type": "between_tools"}` (no thinking before responding; short between-tool updates may appear as thinking blocks) |
 | OpenAI `gpt-5.4`+, `gpt-6` | `reasoning_effort: "none"` |
-| Claude Opus / Fable 5.x, `gpt-6.1` | fails: these cannot turn thinking off, use `low` or `default` |
+| Claude Opus / Fable 5.x, `gpt-6.1`, Gemini 4 Argon | fails: these cannot turn thinking off, use `low` or `default` |
 | other models | nothing: they do not think unless asked |
 
 The in-container runner (`agents/agent_runner.py`) declares its own pinned dependencies in its
@@ -306,6 +308,43 @@ mise run bench:job -- --model openai/gpt-5.4-mini
 mise run bench:job -- --model anthropic/claude-haiku-4-5-20251001
 mise run bench:job -- --model google/gemini-3-flash-preview
 ```
+
+### Vertex AI Models
+
+Use LiteLLM's `vertex_ai/` route rather than `google/`; `google/` targets the API-key-based
+Google AI Studio endpoint. Authenticate locally with Application Default Credentials:
+
+```bash
+gcloud auth application-default login
+```
+
+Then set the project and location in `.env` (use the location where Vertex granted model access):
+
+```dotenv
+VERTEXAI_PROJECT=my-gcp-project
+VERTEXAI_LOCATION=global
+```
+
+`o11y-bench` automatically uploads the local gcloud ADC file into each ephemeral task container.
+To use a service-account credential file instead, also set its absolute host path:
+
+```dotenv
+GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
+```
+
+Gemini 4 Argon supports `low`, `medium`, and `high` thinking levels, but not `off`. Because the
+benchmark defaults to `off`, pass a supported level explicitly:
+
+```bash
+mise run bench:job -- \
+  --model vertex_ai/gemini-4-argon \
+  --reasoning-effort low \
+  --task-name query-cpu-metrics \
+  --n-concurrent 1
+```
+
+The in-container runner includes `google-auth`; the calling identity must have Vertex model access
+and permission to invoke models in `VERTEXAI_PROJECT`.
 
 ### OpenRouter Models
 

@@ -26,12 +26,26 @@ RUNNER_SCRIPT = Path(__file__).parent / "agent_runner.py"
 SYSTEM_PROMPT = Path(__file__).parent / "system_prompt.txt"
 TASK_PROMPT = Path(__file__).parent / "task_prompt.txt"
 VIEWER_COMMAND_STDOUT_PATH = "/logs/agent/command-0/stdout.txt"
+VERTEX_CREDENTIALS_CONTAINER_PATH = "/app/google-application-credentials.json"
 
 
 def normalize_litellm_model_name(model_name: str) -> str:
     if model_name.startswith("google/"):
         return f"gemini/{model_name.split('/', 1)[1]}"
     return model_name
+
+
+def google_application_credentials_path() -> Path | None:
+    """Resolve explicit credentials or the local gcloud ADC file for container upload."""
+    configured = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    if configured:
+        path = Path(configured).expanduser()
+        if not path.is_file():
+            raise FileNotFoundError(f"GOOGLE_APPLICATION_CREDENTIALS does not exist: {path}")
+        return path
+
+    default_adc = Path.home() / ".config/gcloud/application_default_credentials.json"
+    return default_adc if default_adc.is_file() else None
 
 
 def select_remote_mcp_url(mcp_servers: list[Any]) -> str | None:
@@ -78,6 +92,7 @@ class O11yBenchAgent(BaseAgent):
         self.temperature = temperature
         self._extra_env = extra_env or {}
         self.no_tools = no_tools
+        self._vertex_credentials_uploaded = False
 
     @staticmethod
     def name() -> str:
@@ -100,6 +115,15 @@ class O11yBenchAgent(BaseAgent):
             source_path=TASK_PROMPT,
             target_path="/app/task_prompt.txt",
         )
+
+        if (self.model_name or "").startswith("vertex_ai/"):
+            credentials_path = google_application_credentials_path()
+            if credentials_path is not None:
+                await environment.upload_file(
+                    source_path=credentials_path,
+                    target_path=VERTEX_CREDENTIALS_CONTAINER_PATH,
+                )
+                self._vertex_credentials_uploaded = True
 
     async def run(
         self,
@@ -132,6 +156,9 @@ class O11yBenchAgent(BaseAgent):
             "OPENAI_API_KEY",
             "OPENAI_API_BASE",
             "OPENROUTER_API_KEY",
+            "VERTEXAI_PROJECT",
+            "VERTEXAI_LOCATION",
+            "GOOGLE_CLOUD_PROJECT",
         ):
             val = os.environ.get(key)
             if val:
@@ -141,6 +168,8 @@ class O11yBenchAgent(BaseAgent):
         if gemini_api_key:
             env["GEMINI_API_KEY"] = gemini_api_key
             env["GOOGLE_API_KEY"] = gemini_api_key
+        if self._vertex_credentials_uploaded:
+            env["GOOGLE_APPLICATION_CREDENTIALS"] = VERTEX_CREDENTIALS_CONTAINER_PATH
         if mcp_url:
             env["MCP_URL"] = mcp_url
         if self.temperature is not None:
