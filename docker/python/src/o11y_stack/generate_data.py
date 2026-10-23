@@ -15,7 +15,6 @@ import bisect
 import json
 import os
 import random
-import subprocess
 import time
 import urllib.error
 import urllib.parse
@@ -27,10 +26,11 @@ LOKI_URL = "http://localhost:3100"
 TEMPO_URL = "http://localhost:4318"  # OTLP HTTP endpoint
 TEMPO_QUERY_URL = "http://localhost:3200"
 PROMETHEUS_DATA_DIR = "/prometheus"
-# Empty OTLP payload is enough to verify the HTTP ingest path is up.
-_OTLP_HEALTH_BODY = b'{"resourceSpans":[]}'
+METRICS_FILE = "/tmp/metrics.txt"
 
-HOURS_OF_HISTORY = 24  # 1 day (enough for trend analysis; incidents are 3-6h before end)
+# 24h PromQL/LogQL ranges evaluated at snapshot time need samples *before* now-24h
+# (range vectors are left-open; Grafana steps can sit 5m before the window start).
+HOURS_OF_HISTORY = 26  # 24h benchmark window plus a 2h pre-window for range functions
 METRICS_INTERVAL = 30  # seconds between metric samples
 
 # Services to simulate
@@ -156,7 +156,8 @@ class IncidentConfig:
 
         # Deployment event: just before error spike starts
         self.deployment_time = self.error_spike_start - timedelta(minutes=2)
-        self.cache_deployment_time = self.cache_refresh_start - timedelta(minutes=3)
+        # Before the lag's 8-minute warm-up, so the rollout precedes the first lag warning.
+        self.cache_deployment_time = self.cache_refresh_start - timedelta(minutes=10)
 
     def get_error_rate(self, ts: datetime, service: str) -> float:
         """Return error rate for a service at a given time."""
@@ -251,11 +252,22 @@ class IncidentConfig:
 
     def is_deployment_time(self, ts: datetime) -> bool:
         """Check if this timestamp should have deployment log entries."""
-        return abs((ts - self.deployment_time).total_seconds()) < 60
+        # One minute tick, so a rollout logs once per service, not twice.
+        return 0 <= (ts - self.deployment_time).total_seconds() < 60
 
     def is_cache_deployment_time(self, ts: datetime) -> bool:
         """Check if this timestamp should have cache incident deployment entries."""
-        return abs((ts - self.cache_deployment_time).total_seconds()) < 60
+        return 0 <= (ts - self.cache_deployment_time).total_seconds() < 60
+
+
+# Hour, weekday and minute boundaries follow this reference clock, not the scenario clock,
+# so every clock (each run, model arm and regrade) gets the same data relative to it.
+# Changing it changes the data every task is calibrated against.
+REFERENCE_END = datetime(2026, 10, 19, 23, 1, tzinfo=UTC)
+
+
+def reference_time(ts: datetime, end_time: datetime) -> datetime:
+    return REFERENCE_END + (ts - end_time)
 
 
 def get_traffic_multiplier(ts: datetime) -> float:
@@ -309,6 +321,9 @@ def create_otlp_span(
         span["parentSpanId"] = parent_span_id
 
     return span
+
+
+DEPENDENCY_CALL_MAX_NS = 25e6
 
 
 def generate_request_trace(
@@ -428,7 +443,9 @@ def generate_request_trace(
                 service_name=dep_service,
                 operation_name=f"call {dep_service}",
                 start_time_ns=target_start + int(target_duration_ns * 0.2),
-                duration_ns=int(target_duration_ns * 0.5),
+                # A dependency's normal latency: the caller's own slowness stays on the
+                # caller's span, so a slow order-service doesn't make payment-service look slow.
+                duration_ns=int(min(target_duration_ns * 0.5, DEPENDENCY_CALL_MAX_NS)),
                 error=is_error,
                 span_kind=3,  # SPAN_KIND_CLIENT
             )
@@ -573,9 +590,13 @@ class ServiceMetrics:
 # -- Unified Event Generator -------------------------------------------------
 
 
-def push_traces_batch(spans: list[dict], retries: int = 3) -> bool:
+# Request bodies the generator would have sent to Tempo and Loki; o11y_stack.seed keeps them.
+DUMP: dict = {"traces": [], "logs": []}
+
+
+def push_traces_batch(spans: list[dict]) -> None:
     if not spans:
-        return True
+        return
 
     service_spans: dict[str, list] = {}
     for span in spans:
@@ -599,30 +620,12 @@ def push_traces_batch(spans: list[dict], retries: int = 3) -> bool:
         for service, svc_spans in service_spans.items()
     ]
 
-    payload = json.dumps({"resourceSpans": resource_spans}).encode()
-
-    for attempt in range(retries):
-        try:
-            req = urllib.request.Request(
-                f"{TEMPO_URL}/v1/traces",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-            )
-            urllib.request.urlopen(req, timeout=10)
-            return True
-        except urllib.error.HTTPError as exc:
-            if exc.code == 503 and attempt < retries - 1:
-                time.sleep(0.5)
-                continue
-            return False
-        except Exception:
-            return False
-    return False
+    DUMP["traces"].append(json.dumps({"resourceSpans": resource_spans}).encode())
 
 
-def push_logs_batch(logs: list[dict]) -> bool:
+def push_logs_batch(logs: list[dict]) -> None:
     if not logs:
-        return True
+        return
 
     streams: dict[str, dict] = {}
     for entry in logs:
@@ -635,47 +638,46 @@ def push_logs_batch(logs: list[dict]) -> bool:
     for stream in streams.values():
         stream["values"].sort(key=lambda v: int(v[0]))
 
+    DUMP["logs"].append(json.dumps({"streams": list(streams.values())}).encode())
+
+
+def fetch_loki_line_count(end_time: datetime) -> tuple[int, str]:
+    """Lines in the whole history, as the query path sees them (flushed chunks, not memory)."""
+    params = urllib.parse.urlencode(
+        {
+            "query": f'sum(count_over_time({{job=~".+"}}[{HOURS_OF_HISTORY + 1}h]))',
+            "time": int(end_time.timestamp()) + 3600,
+        }
+    )
     try:
-        req = urllib.request.Request(
-            f"{LOKI_URL}/loki/api/v1/push",
-            data=json.dumps({"streams": list(streams.values())}).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        urllib.request.urlopen(req, timeout=10)
-        return True
+        with urllib.request.urlopen(f"{LOKI_URL}/loki/api/v1/query?{params}", timeout=10) as resp:
+            result = json.load(resp)["data"]["result"]
+        return (int(float(result[0]["value"][1])) if result else 0), ""
     except Exception as exc:
-        log(f"  Loki error: {exc}")
-        return False
+        return 0, f"Loki line count failed: {exc}"
 
 
-def wait_for_tempo(max_attempts: int = 10) -> None:
-    url = f"{TEMPO_URL}/v1/traces"
-    headers = {"Content-Type": "application/json"}
-    for attempt in range(max_attempts):
+def wait_for_loki_complete(
+    end_time: datetime, expected_lines: int, max_attempts: int = 1200, poll_interval: float = 0.05
+) -> None:
+    # Loki serves backdated logs from flushed chunks only and flushes on a timer (up to ~30s
+    # after boot), so queries answer empty until then. Flush now and wait for every line.
+    indexed, err = 0, ""
+    for _ in range(max_attempts):
         try:
             urllib.request.urlopen(
-                urllib.request.Request(url, data=_OTLP_HEALTH_BODY, headers=headers),
-                timeout=5,
+                urllib.request.Request(f"{LOKI_URL}/flush", data=b"", method="POST"), timeout=10
             )
-            return
         except Exception as exc:
-            if attempt == max_attempts - 1:
-                log(f"  Tempo OTLP not ready after {max_attempts} attempts: {exc}")
-                raise RuntimeError("Tempo OTLP never became ready") from exc
-            time.sleep(1)
-
-
-def flush_tempo(max_attempts: int = 5) -> None:
-    req = urllib.request.Request(f"{TEMPO_QUERY_URL}/flush", data=b"", method="POST")
-    for attempt in range(max_attempts):
-        try:
-            urllib.request.urlopen(req, timeout=10)
+            err = f"Loki flush failed: {exc}"
+        indexed, count_err = fetch_loki_line_count(end_time)
+        if indexed == expected_lines:
+            log(f"  Loki ready ({indexed} lines)")
             return
-        except Exception as exc:
-            if attempt == max_attempts - 1:
-                log(f"  Tempo flush failed after {max_attempts} attempts: {exc}")
-                raise RuntimeError("Tempo flush never succeeded") from exc
-            time.sleep(1)
+        err = count_err or err
+        time.sleep(poll_interval)
+    log(f"  Loki never indexed every line: {indexed}/{expected_lines} {err}")
+    raise RuntimeError("Loki never became ready")
 
 
 def fetch_tempo_search_traces(
@@ -700,6 +702,40 @@ def fetch_tempo_search_traces(
     return [item for item in traces if isinstance(item, dict)], ""
 
 
+def fetch_tempo_metrics_series(query: str, start_sec: int, end_sec: int) -> tuple[list[dict], str]:
+    params = urllib.parse.urlencode({"q": query, "start": start_sec, "end": end_sec})
+    url = f"{TEMPO_QUERY_URL}/api/metrics/query?{params}"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            payload = json.load(resp)
+    except Exception as exc:
+        return [], f"Tempo metrics query failed: {exc}"
+    series = payload.get("series")
+    if not isinstance(series, list):
+        return [], "Tempo metrics response missing series list."
+    return [item for item in series if isinstance(item, dict)], ""
+
+
+def fetch_tempo_root_span_count(start_sec: int, end_sec: int) -> tuple[int, str]:
+    """Traces in the window, counted as root spans; each generated trace has exactly one."""
+    params = urllib.parse.urlencode(
+        {
+            "q": "{ nestedSetParent < 0 } | count_over_time()",
+            "start": start_sec,
+            "end": end_sec,
+            # One step over the whole window, so the series carries a single total.
+            "step": f"{end_sec - start_sec}s",
+        }
+    )
+    url = f"{TEMPO_QUERY_URL}/api/metrics/query?{params}"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            payload = json.load(resp)
+        return int(sum(float(series.get("value", 0)) for series in payload.get("series", []))), ""
+    except Exception as exc:
+        return 0, f"Tempo trace count failed: {exc}"
+
+
 def _probe_detail(name: str, traces: list[dict], err: str) -> str:
     if traces:
         return f"{name}={len(traces)}"
@@ -707,17 +743,26 @@ def _probe_detail(name: str, traces: list[dict], err: str) -> str:
 
 
 def wait_for_tempo_searchable(
-    end_time: datetime, max_attempts: int = 30, poll_interval: float = 1.0
+    end_time: datetime,
+    max_attempts: int = 2400,
+    poll_interval: float = 0.05,
+    expected_traces: int | None = None,
 ) -> None:
     # Probes are tracked independently: broad and error searches may become ready
     # on different polls (errors are sparser), and requiring both on the same tick
     # caused spurious failures. Poll interval matches Tempo's blocklist_poll.
+    # TraceQL metrics lag search by about a minute after ingest; graders read them as facts,
+    # so the stack is not ready until they return series too. Tempo cuts blocks on its own
+    # clock and has no flush call, so search can answer from the first block while later ones
+    # are still being written: with `expected_traces`, wait until every trace is queryable.
     start_sec = int((end_time - timedelta(hours=24)).timestamp())
     end_sec = int(end_time.timestamp())
     broad_traces: list[dict] = []
     broad_err = ""
     error_traces: list[dict] = []
     error_err = ""
+    metrics_series: list[dict] = []
+    metrics_err = ""
 
     for attempt in range(max_attempts):
         attempt_num = attempt + 1
@@ -727,19 +772,34 @@ def wait_for_tempo_searchable(
             error_traces, error_err = fetch_tempo_search_traces(
                 "{ span:status = error }", start_sec, end_sec, limit=5
             )
+        if not metrics_series:
+            metrics_series, metrics_err = fetch_tempo_metrics_series(
+                "{ } | rate()", start_sec, end_sec
+            )
 
-        if broad_traces and error_traces:
+        if expected_traces is not None and broad_traces and error_traces and metrics_series:
+            indexed, count_err = fetch_tempo_root_span_count(
+                int((end_time - timedelta(hours=HOURS_OF_HISTORY)).timestamp()) - 600,
+                end_sec + 3600,
+            )
+            if indexed != expected_traces:
+                metrics_err = count_err or f"{indexed}/{expected_traces} traces indexed"
+                metrics_series = []
+
+        if broad_traces and error_traces and metrics_series:
             log(
                 "  Tempo search ready "
                 f"(attempt {attempt_num}/{max_attempts}, "
-                f"broad={len(broad_traces)}, error={len(error_traces)})"
+                f"broad={len(broad_traces)}, error={len(error_traces)}, "
+                f"metrics={len(metrics_series)})"
             )
             return
 
-        if attempt == 0 or attempt_num % 5 == 0:
+        if attempt == 0 or attempt_num % 100 == 0:
             details = [
                 _probe_detail("broad", broad_traces, broad_err),
                 _probe_detail("error", error_traces, error_err),
+                _probe_detail("metrics", metrics_series, metrics_err),
             ]
             log(
                 "  Waiting for Tempo search "
@@ -750,16 +810,18 @@ def wait_for_tempo_searchable(
     details = [
         _probe_detail("broad", broad_traces, broad_err),
         _probe_detail("error", error_traces, error_err),
+        _probe_detail("metrics", metrics_series, metrics_err),
     ]
     log(f"  Tempo search never became ready after {max_attempts} attempts: {'; '.join(details)}")
     raise RuntimeError("Tempo search never became ready")
 
 
 def data_end_time_utc() -> datetime:
+    # Whole minutes, so samples sit at the same offsets from the epoch-minute steps of
+    # subqueries whatever the clock (o11y_bench/scenario_clock.py).
     raw = os.environ.get("O11Y_SCENARIO_TIME_ISO", "").strip()
-    if not raw:
-        return datetime.now(UTC).replace(microsecond=0)
-    return datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(UTC)
+    end = datetime.fromisoformat(raw.replace("Z", "+00:00")) if raw else datetime.now(UTC)
+    return end.astimezone(UTC).replace(second=0, microsecond=0)
 
 
 def generate_all_data() -> dict[str, ServiceMetrics]:
@@ -769,14 +831,12 @@ def generate_all_data() -> dict[str, ServiceMetrics]:
     end_time = data_end_time_utc()
     start_time = end_time - timedelta(hours=HOURS_OF_HISTORY)
     incidents = IncidentConfig(end_time)
-    # Tempo is required for the benchmark. If OTLP never comes up, fail fast.
-    wait_for_tempo()
 
     # State
     service_metrics = {s["name"]: ServiceMetrics() for s in SERVICES}
     trace_batch: list[dict] = []
     log_batch: list[dict] = []
-    metrics_file = "/tmp/metrics.txt"
+    metrics_file = METRICS_FILE
 
     total_requests = 0
     total_traces = 0
@@ -814,9 +874,10 @@ def generate_all_data() -> dict[str, ServiceMetrics]:
         buf_size = 0
 
         while current < end_time:
-            traffic = get_traffic_multiplier(current)
+            reference = reference_time(current, end_time)
+            traffic = get_traffic_multiplier(reference)
             ts_epoch = current.timestamp()
-            current_minute = int(ts_epoch) // 60
+            current_minute = int(reference.timestamp()) // 60
 
             # Generate requests/logs/traces once per minute
             if current_minute != last_minute:
@@ -1022,77 +1083,14 @@ def generate_all_data() -> dict[str, ServiceMetrics]:
     if log_batch:
         push_logs_batch(log_batch)
 
-    log("  Flushing Tempo blocks...")
-    flush_tempo()
-    log("  Waiting for Tempo search to become ready...")
-    wait_for_tempo_searchable(end_time)
-
+    DUMP["meta"] = {
+        "end_time": end_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "logs": total_logs,
+        "traces": total_traces,
+    }
     log(f"  Requests: {total_requests:,}")
     log(f"  Traces: {total_traces:,}")
     log(f"  Logs: {total_logs:,}")
     log(f"  Metric samples: {total_samples:,}")
 
-    # Import metrics to Prometheus TSDB
-    log("  Importing metrics to Prometheus TSDB...")
-    try:
-        result = subprocess.run(
-            [
-                "promtool",
-                "tsdb",
-                "create-blocks-from",
-                "openmetrics",
-                metrics_file,
-                PROMETHEUS_DATA_DIR,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-        if result.returncode == 0:
-            log("  Metrics import complete")
-        else:
-            stderr = result.stderr[:500] if result.stderr else "no stderr"
-            log(f"  promtool failed (rc={result.returncode}): {stderr}")
-            raise SystemExit(1) from None
-    except subprocess.TimeoutExpired as exc:
-        log("  promtool timed out")
-        raise SystemExit(1) from exc
-    except SystemExit:
-        raise
-    except Exception as exc:
-        log(f"  promtool error: {exc}")
-        raise SystemExit(1) from exc
-
-    try:
-        os.remove(metrics_file)
-    except Exception:
-        pass
-
-    env_ts = end_time.strftime("%Y-%m-%dT%H:%M:%SZ")
-    with open("/tmp/env_timestamp", "w") as f:
-        f.write(env_ts)
-    log(f"  Environment timestamp: {env_ts}")
-
     return service_metrics
-
-
-# -- Main --------------------------------------------------------------------
-
-
-def main() -> None:
-    random.seed(42)
-
-    log("=" * 50)
-    log("Telemetry Data Generator (deterministic, correlated)")
-    log(f"History: {HOURS_OF_HISTORY}h ({HOURS_OF_HISTORY // 24}d), interval: {METRICS_INTERVAL}s")
-    log("=" * 50)
-
-    start = time.time()
-    generate_all_data()
-    elapsed = time.time() - start
-
-    log(f"Data generation complete in {elapsed:.1f}s")
-
-
-if __name__ == "__main__":
-    main()

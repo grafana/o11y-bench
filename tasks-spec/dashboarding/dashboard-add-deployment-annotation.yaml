@@ -77,3 +77,13 @@ checks:
 rubric:
 - criterion: The response explains that rollout markers now appear on the existing graph and does not claim unrelated dashboard changes
   weight: 30
+  fact:
+    kind: resource
+    resource: dashboard_diff
+    uid: svc-annotate
+- criterion: The dashboard gained a deployment annotation, and nothing else changed - the existing Request Rate panel was not modified or removed, no panel was added, and no dashboard setting other than the annotations changed. An unchanged dashboard fails
+  weight: 15
+  fact:
+    kind: resource
+    resource: dashboard_diff
+    uid: svc-annotate

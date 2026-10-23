@@ -12,6 +12,7 @@ from typing import Any
 import yaml
 
 from grading import models
+from grading.judge import DEFAULT_GRADING_MODEL
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SPECS_ROOT = ROOT / "tasks-spec"
@@ -49,11 +50,11 @@ tags = [{tags_str}]
 difficulty = "medium"
 
 [verifier]
-timeout_sec = 300.0
+timeout_sec = 600.0
 
 [verifier.env]
 ANTHROPIC_API_KEY = "${{ANTHROPIC_API_KEY}}"
-GRADING_MODEL = "claude-haiku-4-5-20251001"
+GRADING_MODEL = "{DEFAULT_GRADING_MODEL}"
 
 [agent]
 timeout_sec = {DEFAULT_AGENT_TIMEOUT_SEC}.0
@@ -102,9 +103,8 @@ def generate_task(spec_path: Path, output_dir: Path) -> str:
     for path in sorted((ROOT / "grading").glob("*.py")):
         shutil.copy2(path, task_dir / "tests" / "grading" / path.name)
 
-    shutil.copy2(
-        ROOT / "grading" / "grader_prompt.txt", task_dir / "tests" / "grading" / "grader_prompt.txt"
-    )
+    for path in sorted((ROOT / "grading").glob("*.txt")):
+        shutil.copy2(path, task_dir / "tests" / "grading" / path.name)
     shutil.copy2(ROOT / "grading" / "verifier_launcher.py", task_dir / "tests" / "verifier.py")
     shutil.copy2(ROOT / "grading" / "test.sh", task_dir / "tests" / "test.sh")
 

@@ -153,3 +153,13 @@ checks:
 rubric:
 - criterion: The response clearly explains that Service Overview can now be scoped to one, many, or all services with saved queries that keep the dropdown working, without implying unsupported changes
   weight: 10
+  fact:
+    kind: resource
+    resource: dashboard_diff
+    uid: service-overview
+- criterion: A service variable was added, and apart from it the only changes are query edits to the existing Request Rate, Error Rate and P95 Latency panels, with no panel added or removed, no panel changed in type or title, and no dashboard setting changed
+  weight: 15
+  fact:
+    kind: resource
+    resource: dashboard_diff
+    uid: service-overview

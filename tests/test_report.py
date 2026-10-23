@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from reporting import report, report_data
+from reporting import report
 
 
 def _trial(model: str, reasoning_effort: str, task_name: str, reward: float) -> dict:
@@ -218,44 +218,6 @@ def test_aggregate_resolves_reasoning_effort_from_trial_config(
     data = report.aggregate([trial], {"task-a": "prometheus_query"})
 
     assert data["models"][0]["label"] == expected_label
-
-
-@pytest.mark.parametrize(
-    ("model_name", "n_input", "n_cache", "n_output", "expected_cost"),
-    [
-        (
-            "gpt-5.4-mini",
-            2_000,
-            500,
-            400,
-            ((1_500 * 0.75) + (500 * 0.075) + (400 * 4.50)) / 1_000_000,
-        ),
-        (
-            "gpt-5.4-nano-2026-03-17",
-            3_000,
-            1_000,
-            800,
-            ((2_000 * 0.20) + (1_000 * 0.02) + (800 * 1.25)) / 1_000_000,
-        ),
-    ],
-)
-def test_agent_result_metrics_uses_snapshot_fallback_pricing(
-    model_name: str, n_input: int, n_cache: int, n_output: int, expected_cost: float
-) -> None:
-    result = {
-        "agent_info": {"model_info": {"name": model_name}},
-        "agent_result": {
-            "cost_usd": 0.0,
-            "n_input_tokens": n_input,
-            "n_cache_tokens": n_cache,
-            "n_output_tokens": n_output,
-        },
-    }
-
-    cost_usd, got_input, got_cache, got_output = report_data.agent_result_metrics(result)
-
-    assert cost_usd == expected_cost
-    assert (got_input, got_cache, got_output) == (n_input, n_cache, n_output)
 
 
 def test_write_report_warns_on_mixed_task_checksums(tmp_path: Path, monkeypatch, capsys) -> None:

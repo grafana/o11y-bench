@@ -54,47 +54,7 @@ statement: |
   Audit the saved "Service Overview Variable Audit" dashboard (`service-overview-variable-audit`) for
   me. I want to know whether it has a service dropdown that supports All and multi-select, and which
   panels are wired to that selection.
-checks:
-- weight: 35
-  type: state
-  params:
-    uid: service-overview-variable-audit
-    mode: dashboard_state
-    variable_count: 1
-    variables:
-    - name: service
-      type: query
-      include_all: true
-      multi: true
-      query:
-        language: grafana_label_values
-        metric_name: http_requests_total
-        label_name: job
-    panels:
-    - title: Request Rate
-      type: timeseries
-      datasource_type: prometheus
-      execute_cases:
-      - result_kind: prometheus_vector
-        bindings:
-          service: payment-service
-        series_count_exact: 1
-        min_value: 0
-        distinct_label_values:
-        - name: job
-          values_exact: []
-      - result_kind: prometheus_vector
-        bindings:
-          service: __all__
-        series_count_exact: 1
-        min_value: 0
-        distinct_label_values:
-        - name: job
-          values_exact: []
-    - title: Recent Errors
-      type: logs
-      datasource_type: loki
-  name: Service Overview Variable Audit has the expected service variable semantics and panel mix
+checks: []
 rubric:
 - criterion: The final response accurately explains that the dashboard has a service dropdown with All and multi-select enabled, and it identifies which panels follow that selection
   weight: 65

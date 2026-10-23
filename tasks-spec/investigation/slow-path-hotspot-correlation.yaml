@@ -10,7 +10,8 @@ tags:
 statement: |
   Some requests have been noticeably slow, and I need something tighter than "latency was up."
   Using roughly the last six hours of telemetry, tell me which HTTP path owns the most request logs
-  over 1 second, about how many such slow requests it generated, and roughly what share of all >1s
+  over 1 second (any log line that records a duration, failed requests included), about how many
+  such slow request logs it has, and roughly what share of all >1s
   request logs that path represents. Then use traces for that same path to tell me whether the same
   latency hotspot keeps recurring across several slow examples or if the slowness is spread around.
   Name the service and operation that are actually eating the time, and include one trace id you
@@ -22,22 +23,43 @@ checks:
     prefix_min_chars: 8
     mode: trace_id
   name: Response cites a trace ID that appears in tool results
+- name: The final response cites a slow POST /api/orders trace by its full ID
+  weight: 10
+  type: state
+  params:
+    mode: cited_trace
+    match: '{ span.http.route = "/api/orders" && duration > 1s }'
+    lookback_hours: 6
 rubric:
-- criterion: The final response states Slow-request count for the dominant slow path accurately.
+- criterion: The final response states the slow-request count for the dominant slow path.
   weight: 30
   fact:
     kind: query
     backend: loki
-    query: sum(count_over_time({job=~"user-service|order-service|payment-service"} | json | __error__="" | path="/api/orders" | duration_ms >= 1000 [6h]))
-- criterion: The final response states Dominant slow-path share of all >1s request logs accurately.
+    query: sum(count_over_time({job=~".+"} | json | __error__="" | path="/api/orders" | duration_ms >=
+      1000 [6h]))
+- criterion: The final response states the dominant slow path's share of all >1s request logs.
   weight: 25
   fact:
     kind: query
     backend: loki
-    query: sum(count_over_time({job=~"user-service|order-service|payment-service"} | json | __error__="" | path="/api/orders" | duration_ms >= 1000 [6h])) / sum(count_over_time({job=~"user-service|order-service|payment-service"} | json | __error__="" | duration_ms >= 1000 [6h]))
-- criterion: The final response identifies `/api/orders` as the path contributing the most >1s request logs in the window and ties that ranking to log evidence rather than generic latency wording
+    query: sum(count_over_time({job=~".+"} | json | __error__="" | path="/api/orders" | duration_ms >=
+      1000 [6h])) / sum(count_over_time({job=~".+"} | json | __error__="" | duration_ms >= 1000 [6h]))
+- criterion: The final response identifies `/api/orders` as the path with the most >1s request logs in
+    the window, as the per-path counts in the Source of truth show
   weight: 10
-- criterion: The final response states whether one recurring hotspot shows up across several slow traces or whether the slowness is spread around
-  weight: 5
-- criterion: The final response identifies `order-service` and `handle POST /api/orders` as the main latency hotspot rather than stopping at an upstream relay span like webapp or api-gateway
-  weight: 10
+  fact:
+    kind: query
+    backend: loki
+    query: sum by (path) (count_over_time({job=~".+"} | json | __error__="" | duration_ms >= 1000 [6h]))
+- criterion: The final response names order-service's `handle POST /api/orders` span as the hotspot eating
+    the time in the slow requests, and says whether it recurs across them, consistent with the slow traces
+    in the Source of truth
+  weight: 15
+  fact:
+    kind: query
+    backend: tempo
+    query: '{ name = "POST /api/orders" && duration > 1s } >> { resource.service.name = "order-service"
+      && name = "handle POST /api/orders" } | select(duration)'
+    limit: 20
+    lookback_hours: 6

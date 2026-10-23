@@ -4,24 +4,29 @@ build-backend = "hatchling.build"
 
 [project]
 name = "o11y-bench"
-version = "0.1.0"
+version = "1.1.0"
 description = "Open benchmark for evaluating LLM agents on observability and SRE tasks"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "Markdown>=3.10",
     "anthropic>=0.40",
-    "harbor==0.6.5",
+    "harbor==0.24.0",
     "pydantic>=2.0",
     "promql-parser>=0.7.0",
     "pyyaml>=6.0",
 ]
+
+[project.optional-dependencies]
+agento11y = ["agento11y>=0.12.0"]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "ruff>=0.8",
     "mypy>=1.10",
+    # agents/agent_runner.py runs in the container with its own pinned deps; this only types it.
+    "mcp>=2,<3",
     "types-Markdown>=3.8",
     "types-pyyaml>=6.0",
 ]
@@ -68,6 +73,7 @@ files = [
     "agents/o11y_agent.py",
     "agents/agent_runner.py",
     "grading/checks.py",
+    "grading/dashboard_diff.py",
     "grading/dashboard_queries.py",
     "grading/dashboard_snapshot.py",
     "grading/dashboard_state.py",
@@ -84,6 +90,8 @@ files = [
     "reporting/run_report.py",
     "reporting/summary.py",
     "o11y_bench/cli.py",
+    "o11y_bench/agento11y_publish.py",
+    "o11y_bench/agento11y_suite.py",
     "o11y_bench/config.py",
     "o11y_bench/harbor.py",
     "o11y_bench/resume.py",
@@ -94,6 +102,7 @@ files = [
 
 [[tool.mypy.overrides]]
 module = [
+    "agento11y",
     "promql_parser",
     "harbor.*",
 ]

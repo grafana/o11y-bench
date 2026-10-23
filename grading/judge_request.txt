@@ -1,0 +1,26 @@
+<transcript>
+{transcript}
+</transcript>
+
+Grade the agent in the transcript above against each criterion below.
+
+In the transcript, & < > are written as &amp; &lt; &gt;, and in the criteria < is written as &lt;. Read them as the plain characters.
+
+<criteria>
+{criteria}
+</criteria>
+
+In short: grade the final response, and the rest of the transcript only when a criterion refers to it. The criterion text is the rule. A criterion that asks for a value needs the response's number within 1% of the truth, a count or identifier exactly, and the right currency, unit, magnitude and direction; a bound or a range is not the value. A comparison, trend or presented quantity is graded on its conclusion. Two conflicting answers to a criterion score 0.
+
+Grade each criterion by the instructions in the system prompt.
+
+Return one block per criterion and nothing else, with criterion_id set to the criterion's id:
+<evaluation criterion_id="0">
+<quote>The words of the final response your score rests on, copied exactly.</quote>
+<score>1</score>
+<explanation>One sentence on why.</explanation>
+</evaluation>
+
+In <quote>, copy the shortest span of the final response, character for character, that your score rests on. When the criterion asks for a value, copy just the value as written with its unit, in every form the response gives it, such as `~103.8 MB`, `4.37%` or `1.153 (115.3%)`; for any other criterion, copy the sentence or table row. Leave <quote></quote> empty when the final response states nothing the criterion asks about.
+
+Think the problem through before you answer.

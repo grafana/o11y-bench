@@ -4,11 +4,34 @@ import signal
 import subprocess
 import sys
 import threading
+from pathlib import Path
 from types import FrameType
 
 from .config import DEFAULT_AGENT_IMPORT_PATH, JOB_CONFIG, ROOT, TASKS_DIR, JobSpec
 
 PREFLIGHT_SCRIPT = ROOT / "scripts" / "harbor_preflight.sh"
+
+
+def builtin_prompt_template(spec: JobSpec) -> Path:
+    """Where a built-in agent's prompt template lives, beside the job dir."""
+    return spec.jobs_dir / f"{spec.job_name}.prompt.md"
+
+
+def write_builtin_prompt_template(spec: JobSpec, scenario_time_iso: str) -> None:
+    """Give a built-in agent (Claude Code, OpenCode) the prompt our agent sends, with the
+    scenario clock: trials start hours after the clock is set, so real now is not it."""
+    agents = ROOT / "agents"
+    system = (agents / "system_prompt.txt").read_text().strip()
+    task = (agents / "task_prompt.txt").read_text()
+    path = builtin_prompt_template(spec)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    prompt = f"{system}\n\n" + task.format(current_time=scenario_time_iso, statement="\0")
+    # Harbor renders the file with Jinja: keep our text literal and leave only the instruction.
+    path.write_text(
+        "{% raw %}"
+        + prompt.replace("\0", "{% endraw %}{{ instruction }}{% raw %}")
+        + "{% endraw %}"
+    )
 
 
 def build_command(spec: JobSpec, *, quiet: bool = False) -> list[str]:
@@ -23,11 +46,9 @@ def build_command(spec: JobSpec, *, quiet: bool = False) -> list[str]:
         str(JOB_CONFIG),
         "--path",
         str(spec.tasks_dir),
-        *(
-            ["--agent", spec.agent]
-            if spec.agent
-            else ["--agent-import-path", spec.agent_import_path]
-        ),
+        # Harbor's --agent takes a built-in name or an import path.
+        "--agent",
+        spec.agent or spec.agent_import_path,
         "--jobs-dir",
         str(spec.jobs_dir),
         "--job-name",
@@ -38,9 +59,13 @@ def build_command(spec: JobSpec, *, quiet: bool = False) -> list[str]:
         str(spec.n_attempts),
         "--n-concurrent",
         str(spec.n_concurrent),
-        "--ak",
-        f"reasoning_effort={spec.reasoning_effort}",
     ]
+    # Harbor rejects --ak kwargs outside an agent's schema, and not every agent takes
+    # reasoning_effort (or "off"), so only pass a real level.
+    if spec.reasoning_effort != "off":
+        command.extend(["--ak", f"reasoning_effort={spec.reasoning_effort}"])
+    if spec.agent:
+        command.extend(["--ak", f"prompt_template_path={builtin_prompt_template(spec)}"])
     for task_name in spec.task_names:
         command.extend(["--include-task-name", task_name])
     if spec.override_cpus is not None:
@@ -83,8 +108,8 @@ def build_command_from_args(harbor_args: list[str], *, quiet: bool = False) -> l
         command.extend(["--config", str(JOB_CONFIG)])
     if not any(name in harbor_args for name in ("--path", "-p", "--dataset", "-d")):
         command.extend(["--path", str(TASKS_DIR)])
-    if "--agent-import-path" not in harbor_args:
-        command.extend(["--agent-import-path", DEFAULT_AGENT_IMPORT_PATH])
+    if not any(name in harbor_args for name in ("--agent", "-a", "--agent-import-path")):
+        command.extend(["--agent", DEFAULT_AGENT_IMPORT_PATH])
     if quiet and not any(name in harbor_args for name in ("--quiet", "-q")):
         command.append("--quiet")
     command.extend(harbor_args)

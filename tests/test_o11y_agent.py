@@ -121,6 +121,14 @@ async def test_run_passes_explicit_temperature_agent_kwarg(tmp_path: Path) -> No
     assert call_env["TEMPERATURE"] == "0"
 
 
+@pytest.mark.parametrize("agent_cls", [O11yBenchAgent, LangChainO11yBenchAgent])
+def test_agents_declare_mcp_support_so_harbor_runs_mcp_tasks(
+    agent_cls: type[O11yBenchAgent],
+) -> None:
+    # Harbor refuses to start a trial whose task configures MCP servers otherwise.
+    assert agent_cls.capabilities.mcp_servers
+
+
 @pytest.mark.anyio
 async def test_langchain_agent_setup_uploads_langchain_runner(tmp_path: Path) -> None:
     agent = LangChainO11yBenchAgent(logs_dir=tmp_path, model_name="openai/gpt-5.4-nano")

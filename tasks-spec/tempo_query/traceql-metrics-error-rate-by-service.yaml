@@ -16,14 +16,24 @@ checks:
     prefix_min_chars: 8
     mode: trace_id
   name: Response cites a trace ID that appears in tool results
+- name: The final response cites a failed POST /api/payments trace by its full ID
+  weight: 10
+  type: state
+  params:
+    mode: cited_trace
+    match: '{ span.http.route = "/api/payments" && status = error }'
 rubric:
-- criterion: The final response explains why payment-service shows the highest erroring-span rate for POST /api/payments using span or metric evidence from the transcript
+- criterion: The final response explains, with span or metric evidence, that payment-service has the highest
+    erroring-span rate on POST /api/payments
   weight: 10.0
-- criterion: The final response cites at least one numeric rate, count, or duration from traces or metrics to support the conclusion
-  weight: 15.0
-- criterion: The response identifies payment-service
+  fact:
+    kind: query
+    backend: tempo
+    query: '{ span.http.route = "/api/payments" && status = error } | rate() by (resource.service.name)'
+- criterion: The response identifies payment-service as the service whose spans fail on POST /api/payments
   weight: 25.0
-- criterion: The final response discusses failing requests using error, 5xx, failed span, or non-ok status wording
-  weight: 20.0
-- criterion: The response references payments traffic
-  weight: 15.0
+  fact:
+    kind: query
+    backend: tempo
+    query: '{ span.http.route = "/api/payments" && status = error } | select(name, resource.service.name)'
+    limit: 10

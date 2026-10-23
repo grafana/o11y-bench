@@ -7,8 +7,10 @@ SCENARIO_TIME_ENV = "O11Y_SCENARIO_TIME_ISO"
 
 
 def current_scenario_time_iso(now: datetime | None = None) -> str:
+    # Whole minutes: samples sit every 30s back from the clock while subquery and range steps sit
+    # on epoch minutes, so a mid-minute clock shifts them against each other.
     current = datetime.now(UTC) if now is None else now.astimezone(UTC)
-    return current.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return current.replace(second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def parse_scenario_time_iso(value: str) -> datetime:
@@ -18,7 +20,8 @@ def parse_scenario_time_iso(value: str) -> datetime:
 def resolve_scenario_time() -> str:
     # Default to real "now" so Tempo's ingest/search time windows stay aligned; telemetry
     # is regenerated each stack boot, so the absolute timestamp is incidental.
-    return os.environ.get(SCENARIO_TIME_ENV, "").strip() or current_scenario_time_iso()
+    raw = os.environ.get(SCENARIO_TIME_ENV, "").strip()
+    return current_scenario_time_iso(parse_scenario_time_iso(raw) if raw else None)
 
 
 @contextmanager

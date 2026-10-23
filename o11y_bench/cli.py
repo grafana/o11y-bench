@@ -50,6 +50,11 @@ def main() -> None:
     suite_parser.add_argument("--no-resume", action="store_true")
     suite_parser.add_argument("--dry-run", action="store_true")
     suite_parser.add_argument("--quiet", action="store_true")
+    suite_parser.add_argument(
+        "--agento11y-publish",
+        action="store_true",
+        help="Publish each completed trial to an Agent Observability experiment",
+    )
     suite_parser.add_argument("--n-attempts", type=int, default=DEFAULT_N_ATTEMPTS)
     suite_parser.add_argument("--n-concurrent", type=int, default=DEFAULT_N_CONCURRENT)
     suite_parser.add_argument("--override-cpus", type=int)
@@ -82,6 +87,11 @@ def main() -> None:
     )
     job_parser.add_argument("--dry-run", action="store_true")
     job_parser.add_argument("--quiet", action="store_true")
+    job_parser.add_argument(
+        "--agento11y-publish",
+        action="store_true",
+        help="Publish each completed trial to an Agent Observability experiment",
+    )
 
     # --- finalize: stamp checksums + generate per-job report ---
     finalize_parser = subparsers.add_parser(
@@ -100,6 +110,17 @@ def main() -> None:
     regrade_parser.add_argument("--path", type=Path)
     regrade_parser.add_argument("--job-name")
     regrade_parser.add_argument("--quiet", action="store_true")
+    regrade_parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Grade from each trial's saved verifier/truth.json; no stack, no live reads",
+    )
+    regrade_parser.add_argument(
+        "--n-concurrent",
+        type=int,
+        default=1,
+        help="Tasks to regrade at once, each on its own stack",
+    )
 
     args = _parse_args(parser)
 
@@ -156,6 +177,7 @@ def _cmd_suite(args: argparse.Namespace) -> None:
             n_attempts=args.n_attempts,
             n_concurrent=args.n_concurrent,
             tasks_dir=_resolve_tasks_path(args.path),
+            agento11y_publish=args.agento11y_publish,
             override_cpus=args.override_cpus,
             override_memory_mb=args.override_memory_mb,
             override_storage_mb=args.override_storage_mb,
@@ -199,7 +221,17 @@ def _cmd_job(args: argparse.Namespace) -> None:
     if not args.dry_run:
         run_preflight(quiet=args.quiet)
 
-    result = execute_job(spec, dry_run=args.dry_run, quiet=args.quiet)
+    execute_kwargs = {"dry_run": args.dry_run, "quiet": args.quiet}
+    if getattr(args, "agento11y_publish", False):
+        execute_kwargs["agento11y_publish"] = True
+    result = execute_job(spec, **execute_kwargs)
+    if result.agento11y_result and not args.quiet:
+        published = result.agento11y_result
+        print(
+            f"Published {published.trial_count} trial(s) and {published.score_count} score(s) "
+            f"to Agent Observability experiment {published.experiment_id}"
+        )
+        print(f"View in Agent Observability: {published.url}")
     if result.harbor_exit_code and result.harbor_exit_code != 0:
         raise SystemExit(result.harbor_exit_code)
 
@@ -232,7 +264,13 @@ def _cmd_regrade(args: argparse.Namespace) -> None:
         if latest is None:
             raise SystemExit(f"No job dir found for --job-name {args.job_name!r} under {target}")
         target = latest
-    execute_regrade(target, tasks_dir=tasks_dir, quiet=args.quiet)
+    execute_regrade(
+        target,
+        tasks_dir=tasks_dir,
+        quiet=args.quiet,
+        offline=args.offline,
+        n_concurrent=args.n_concurrent,
+    )
 
 
 def _resolve_tasks_path(path: Path | None) -> Path:

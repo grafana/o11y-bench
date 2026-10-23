@@ -10,25 +10,6 @@ memberlist:
   advertise_addr: 127.0.0.1
   abort_if_cluster_join_fails: false
 
-ingester:
-  trace_idle_period: 1s
-  max_block_duration: 1s
-  flush_check_period: 1s
-  lifecycler:
-    address: 127.0.0.1
-    interface_names: []
-    min_ready_duration: 1s
-    final_sleep: 0s
-    join_after: 0s
-    observe_period: 0s
-    heartbeat_period: 1s
-    num_tokens: 128
-    ring:
-      kvstore:
-        store: inmemory
-      replication_factor: 1
-      heartbeat_timeout: 10m
-
 querier:
   frontend_worker:
     frontend_address: 127.0.0.1:9095
@@ -45,17 +26,6 @@ distributor:
     kvstore:
       store: inmemory
 
-compactor:
-  compaction:
-    block_retention: 99999h
-  ring:
-    kvstore:
-      store: inmemory
-    instance_addr: 127.0.0.1
-    instance_interface_names: []
-    wait_stability_min_duration: 0s
-    wait_stability_max_duration: 0s
-
 metrics_generator:
   ring:
     kvstore:
@@ -64,12 +34,6 @@ metrics_generator:
     instance_interface_names: []
   metrics_ingestion_time_range_slack: 72h
   processor:
-    local_blocks:
-      filter_server_spans: false
-      flush_to_storage: true
-      max_block_duration: 30s
-      complete_block_timeout: 1s
-      max_block_bytes: 500000000
     service_graphs:
       dimensions: []
     span_metrics:
@@ -77,40 +41,55 @@ metrics_generator:
   storage:
     path: /var/tempo/generator/wal
     remote_write: []
-  traces_storage:
-    path: /var/tempo/generator/traces
 
 storage:
   trace:
     backend: local
-    blocklist_poll: 1s
+    blocklist_poll: 100ms
     wal:
       path: /var/tempo/wal
-      # Block start/end times only expand to spans within this slack of real wall-clock
-      # time. Backdated benchmark scenarios can sit days/weeks in the past, so keep this
-      # generous — otherwise blocks claim a narrow time range and search filters them out.
-      ingestion_time_range_slack: 720h
+    block:
+      # Tempo 3.1 defaults to dedicated columns for http.route, http.status_code and others, and
+      # tag discovery (search tags, tag values) then misses those attributes. Keep them generic.
+      parquet_dedicated_columns: []
     local:
       path: /var/tempo/blocks
 
 overrides:
-  ingestion_rate_limit_bytes: 150000000
-  ingestion_burst_size_bytes: 200000000
-  max_bytes_per_trace: 50000000
-  metrics_generator_processors:
-    - local-blocks
-    - service-graphs
-    - span-metrics
-  metrics_generator_max_active_series: 100000
+  defaults:
+    global:
+      max_bytes_per_trace: 50000000
+    ingestion:
+      burst_size_bytes: 200000000
+      rate_limit_bytes: 150000000
+    metrics_generator:
+      max_active_series: 100000
+      processors:
+        - service-graphs
+        - span-metrics
+
+# Everything the generator ingests is flushed to the backend before the stack is ready, so
+# queries read blocks only (no live-store/backend split, no trailing-edge cutoff) and
+# results do not depend on how recently the data was written.
+live_store:
+  fail_on_high_lag: false
+  flush_check_period: 50ms
+  max_trace_idle: 100ms
+  max_block_duration: 300ms
+  wal:
+    # Block start/end times only expand to spans within this slack of real wall-clock
+    # time. Backdated benchmark scenarios can sit days/weeks in the past, so keep this
+    # generous — otherwise blocks claim a narrow time range and search filters them out.
+    ingestion_time_range_slack: 720h
 
 query_frontend:
+  query_end_cutoff: 0s
   mcp_server:
     enabled: true
   max_retries: 2
   search:
     max_duration: 72h
     query_backend_after: 0s
-    query_ingesters_until: 72h
   metrics:
     max_duration: 72h
     query_backend_after: 0s

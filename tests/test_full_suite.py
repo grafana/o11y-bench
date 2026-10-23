@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from o11y_bench import config, resume
 
 
@@ -115,6 +117,28 @@ def test_repair_patches_concurrency_and_paths(tmp_path: Path) -> None:
     assert saved_job["environment"]["delete"] is False
     assert saved_trial["trials_dir"] == str(job_dir.resolve())
     assert saved_trial["environment"]["delete"] is False
+
+
+def test_plan_resumes_a_job_saved_by_harbor_0_24(tmp_path: Path) -> None:
+    job_dir, expected = _make_job(tmp_path)
+    saved_config = json.loads((job_dir / "config.json").read_text())
+    agent = saved_config["agents"][0]
+    agent["name"] = agent.pop("import_path")
+    (job_dir / "config.json").write_text(json.dumps(saved_config))
+
+    assert resume.plan_job_dir_for_resume(job_dir, expected).actions == ()
+
+
+def test_plan_resumes_a_single_attempt_job_that_omits_n_attempts(tmp_path: Path) -> None:
+    job_dir, expected = _make_job(tmp_path)
+    saved_config = json.loads((job_dir / "config.json").read_text())
+    del saved_config["n_attempts"]
+    (job_dir / "config.json").write_text(json.dumps(saved_config))
+
+    with pytest.raises(RuntimeError, match="n_attempts"):
+        resume.plan_job_dir_for_resume(job_dir, expected)
+    expected["n_attempts"] = 1
+    assert resume.plan_job_dir_for_resume(job_dir, expected).actions == ()
 
 
 def test_plan_marks_environment_delete_drift_for_repair(tmp_path: Path) -> None:

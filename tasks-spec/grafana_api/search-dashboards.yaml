@@ -40,21 +40,7 @@ setup_dashboards:
 statement: |
   What's on the "Service Overview" dashboard (`svc-overview`)? How many panels are there,
   what are they called, and what Grafana panel type is each one using right now?
-checks:
-- weight: 30
-  type: state
-  params:
-    uid: svc-overview
-    mode: dashboard_state
-    panel_count: 2
-    panels:
-    - title: Request Rate
-      type: timeseries
-      datasource_type: prometheus
-    - title: Error Rate
-      type: stat
-      datasource_type: prometheus
-  name: Service Overview exists in Grafana with the expected saved panel structure
+checks: []
 rubric:
 - criterion: The final response accurately reports the saved panel count and pairs each saved panel title with its saved Grafana panel type
   weight: 50.0

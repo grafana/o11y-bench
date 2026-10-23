@@ -1,5 +1,8 @@
 min_version = "2024.1.0"
 
+[env]
+_.file = ".env"
+
 [tools]
 python = "3.14"
 uv = "0.11.8"
@@ -13,6 +16,24 @@ run = "uv run python -m scripts.sync_tasks"
 [tasks."setup:preflight"]
 description = "Clean stale Harbor Docker projects and pre-build shared images"
 run = "bash scripts/harbor_preflight.sh"
+
+[tasks."agento11y:setup"]
+description = "Install the published Agent Observability SDK integration"
+run = "uv sync --extra agento11y"
+
+[tasks."agento11y:sync-suite"]
+description = "Synchronize and publish tasks-spec YAML as an Agent Observability test suite"
+run = "uv run --extra agento11y python -m o11y_bench.agento11y_suite"
+
+[tasks."agento11y:job"]
+description = "Run or resume one benchmark variant and publish it to Agent Observability"
+depends = ["setup:sync"]
+run = "uv run --extra agento11y python -m o11y_bench job --agento11y-publish"
+
+[tasks."agento11y:suite"]
+description = "Run the standard suite and publish it to Agent Observability"
+depends = ["setup:sync"]
+run = "uv run --extra agento11y python -m o11y_bench suite --agento11y-publish"
 
 # -- Bench --
 
@@ -63,6 +84,10 @@ run = "uv run mypy"
 [tasks.lint]
 description = "Run Ruff lint rules"
 run = "uv run ruff check ."
+
+[tasks."lint:tasks"]
+description = "Lint task specs for checks that grade the method instead of the outcome"
+run = "uv run python -m scripts.lint_tasks"
 
 [tasks.format]
 description = "Format Python files with Ruff"

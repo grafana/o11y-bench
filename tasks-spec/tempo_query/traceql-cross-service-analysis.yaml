@@ -18,16 +18,34 @@ checks:
     prefix_min_chars: 8
     mode: trace_id
   name: Response cites a trace ID that appears in tool results
+- name: The final response cites a POST /api/orders trace over one second by its full ID
+  weight: 10
+  type: state
+  params:
+    mode: cited_trace
+    match: '{ name = "POST /api/orders" && duration > 1s }'
 rubric:
-- criterion: The final response identifies the single largest latency contributor using span durations or timings from trace data
-  weight: 10.0
-- criterion: The final response states whether that hotspot appears on most slow traces or only some of them
-  weight: 10.0
-- criterion: The response names order-service (handles POST /api/orders in the bench)
+- criterion: The response names order-service as the backend handling the slow POST /api/orders requests
   weight: 15.0
-- criterion: The response names at least one other concrete service or hop from the slow path besides order-service
-  weight: 15.0
-- criterion: The response discusses cross-service interaction
-  weight: 25.0
-- criterion: Any named latency bottleneck in the final answer is supported by trace spans or timings in the transcript
-  weight: 15.0
+  fact:
+    kind: query
+    backend: tempo
+    query: '{ name = "POST /api/orders" && duration > 1s }'
+    limit: 10
+- criterion: The span the final response blames for its example trace's time is the span with the most own time in the Source of truth; blaming a downstream call that is short there, or stopping at an edge span, fails
+  weight: 15
+  fact:
+    kind: cited_trace
+- criterion: Whether the final response says the hotspot shows up on most slow requests or only some agrees
+    with the slow traces in the Source of truth
+  weight: 10
+  fact:
+    kind: query
+    backend: tempo
+    query: '{ name = "POST /api/orders" && duration > 1s } >> { resource.service.name = "order-service"
+      && name = "handle POST /api/orders" } | select(duration)'
+    limit: 20
+- criterion: Other services or hops the final response names on its example trace's slow path are among that trace's services in the Source of truth
+  weight: 10
+  fact:
+    kind: cited_trace

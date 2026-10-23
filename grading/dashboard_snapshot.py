@@ -1,5 +1,4 @@
 import re
-from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -171,20 +170,6 @@ def parse_tag_keys(raw: Any) -> list[str]:
     return []
 
 
-def split_response_lines(text: str) -> list[str]:
-    return [line.strip() for line in text.splitlines() if line.strip()]
-
-
-def line_mentions_all(line: str, *fragments: str) -> bool:
-    normalized_line = normalize_token(line)
-    return all(normalize_token(fragment) in normalized_line for fragment in fragments)
-
-
-def strip_markdown_code_fences(text: str) -> str:
-    text = re.sub(r"```[a-zA-Z0-9_-]*", "", text)
-    return text.replace("```", "")
-
-
 def normalize_token(text: str) -> str:
     return " ".join(text.split()).strip().lower()
 
@@ -200,26 +185,3 @@ def normalize_query_value(text: str) -> str:
     if match := re.fullmatch(r"\$\{([a-zA-Z_][a-zA-Z0-9_]*)(?::[^}]+)?\}", normalized):
         return f"${match.group(1)}"
     return normalized
-
-
-def select_panels_for_titles(
-    snapshot: DashboardSnapshot,
-    panel_titles: Iterable[str],
-) -> tuple[list[dict[str, Any]], str | None]:
-    requested_titles = [str(title) for title in panel_titles if str(title).strip()]
-    if not requested_titles:
-        return snapshot.panels, None
-
-    selected: list[dict[str, Any]] = []
-    missing_titles: list[str] = []
-    for title in requested_titles:
-        panel = find_named_dashboard_item(snapshot.panels, item_name=title, field="title")
-        if panel is None:
-            missing_titles.append(title)
-            continue
-        selected.append(panel)
-
-    if missing_titles:
-        unique_titles = ", ".join(sorted(set(missing_titles), key=normalize_token))
-        return [], f"Requested panel_titles not found in dashboard: {unique_titles}"
-    return selected, None

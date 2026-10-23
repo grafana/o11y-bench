@@ -4,17 +4,20 @@ from grading.env_context import (
     default_tempo_search_window_sec,
     fetch_grafana_datasources_checked,
     fetch_tempo_attribute_values,
+    find_trace_examples,
     resolve_grafana_datasource,
 )
 from grading.helpers import (
     assistant_scope_note,
     assistant_text_blobs,
+    cited_trace_ids,
     require_stack_url,
     response_cites_trace_id_prefix,
     trace_ids_from_tool_content,
 )
 from grading.models import (
     CheckItem,
+    CitedTraceParams,
     DashboardStateParams,
     DatasourceDetailStateParams,
     DatasourceInventoryStateParams,
@@ -48,8 +51,10 @@ def run_check(
     match check.params:
         case TraceIdGroundingParams():
             return validate_trace_id_grounding(check.params, transcript)
+        case CitedTraceParams():
+            return validate_cited_trace(check.params, transcript, ctx)
         case DashboardStateParams():
-            return validate_dashboard_state(check.params, transcript, ctx)
+            return validate_dashboard_state(check.params, ctx)
         case DatasourceInventoryStateParams():
             return validate_datasource_inventory(check.params, ctx)
         case DatasourceDetailStateParams():
@@ -90,6 +95,27 @@ def validate_trace_id_grounding(
             f"Response cites trace ID prefix grounded in tool results ({prefix}, {scope_note}).",
         )
     return 0.0, "Response does not cite any trace ID prefix that appeared in tool results."
+
+
+def validate_cited_trace(
+    params: CitedTraceParams,
+    transcript: Transcript,
+    ctx: VerifierContext | None,
+) -> tuple[float, str]:
+    """Pass when a trace the final response cites by full ID is in Tempo and matches."""
+    if ctx is None or not ctx.tempo_url:
+        return 0.0, "TEMPO_URL is not set."
+    ids = cited_trace_ids(transcript.final_answer())
+    if not ids:
+        return 0.0, "The final response cites no full trace ID."
+    examples, misses, err = find_trace_examples(
+        ctx.tempo_url, ids, params.match, params.lookback_hours, ctx.timeout_sec
+    )
+    if err:
+        return 0.0, err
+    if examples:
+        return 1.0, f"Cited trace {examples[0]} is in Tempo and matches {params.match}."
+    return 0.0, f"No cited trace matches {params.match}: " + "; ".join(misses) + "."
 
 
 def validate_datasource_inventory(

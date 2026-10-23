@@ -134,15 +134,19 @@ def saved_resume_fields(config: dict[str, Any]) -> dict[str, Any]:
     environment = config.get("environment") or {}
     orchestrator = config.get("orchestrator") or {}
     retry = config.get("retry") or orchestrator.get("retry") or {}
+    # Harbor 0.24 saves a custom agent's import path as its name and omits n_attempts when it is 1.
+    name, import_path = agent.get("name"), agent.get("import_path")
+    if import_path is None and isinstance(name, str) and ":" in name:
+        name, import_path = None, name
     return {
         "job_name": config.get("job_name"),
         "jobs_dir": normalize_saved_path(config.get("jobs_dir")),
-        "n_attempts": config.get("n_attempts"),
+        "n_attempts": config.get("n_attempts", 1),
         "model_name": agent.get("model_name"),
         "reasoning_effort": ((agent.get("kwargs") or {}).get("reasoning_effort") or "off"),
         "tasks_path": normalize_saved_path(datasets.get("path")),
-        "agent_name": agent.get("name"),
-        "agent_import_path": agent.get("import_path"),
+        "agent_name": name,
+        "agent_import_path": import_path,
         "environment_type": environment.get("type"),
         "override_cpus": environment.get("override_cpus"),
         "override_memory_mb": environment.get("override_memory_mb"),

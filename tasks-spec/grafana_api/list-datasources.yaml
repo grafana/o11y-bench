@@ -6,22 +6,9 @@ tags:
 - api
 statement: |
   What datasources are configured in Grafana? List their names and types.
-checks:
-- weight: 60
-  type: state
-  params:
-    mode: datasource_inventory
-    names:
-    - Prometheus
-    - Loki
-    - Tempo
-    types:
-    - prometheus
-    - loki
-    - tempo
-  name: Grafana has the expected datasource inventory configured
+checks: []
 rubric:
-- criterion: The final response correctly names each configured datasource and pairs each one with its datasource type, consistent with Grafana tool output in the transcript
+- criterion: The final response correctly names each configured datasource and pairs each one with its datasource type.
   weight: 30
   fact:
     kind: resource

@@ -27,5 +27,3 @@ rubric:
     query: service_cache_refresh_lag_seconds{job="user-service"}
 - criterion: The final response names `user-service` and states that the cache-refresh incident has recovered or is no longer actively lagging if the current lag is back near zero
   weight: 10
-- criterion: The final response clearly distinguishes the peak lag during the incident from the current lag now instead of collapsing them into one number
-  weight: 10

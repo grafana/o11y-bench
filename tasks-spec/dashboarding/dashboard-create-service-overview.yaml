@@ -101,27 +101,22 @@ checks:
       type: stat
       datasource_type: prometheus
       execute_cases:
+      # The peak is one number per selection, so the stat may aggregate jobs away; the
+      # single-service values show it follows the variable, the pair that it runs for many.
       - result_kind: prometheus_vector
         bindings:
           service: payment-service
-        series_count_exact: 1
-        min_value: 0
-        distinct_label_values:
-        - name: job
-          values_exact:
-          - payment-service
+        canonical_query: max(max_over_time(service_retry_queue_depth{job="payment-service"}[$__range]))
+      - result_kind: prometheus_vector
+        bindings:
+          service: order-service
+        canonical_query: max(max_over_time(service_retry_queue_depth{job="order-service"}[$__range]))
       - result_kind: prometheus_vector
         bindings:
           service:
           - payment-service
           - order-service
-        series_count_exact: 2
         min_value: 0
-        distinct_label_values:
-        - name: job
-          values_exact:
-          - payment-service
-          - order-service
     - type: logs
       datasource_type: loki
       execute_cases:
@@ -156,6 +151,4 @@ checks:
           - payment-service
           - order-service
   name: The saved Service Overview panels follow the service variable for metrics and recent 5xx logs
-rubric:
-- criterion: The response summarizes the dashboard as a service-filtered overview that makes it easy for an on-call reader to skim rate, errors, latency, peak retry backlog, recent 5xx logs, and deployment markers, and it describes the saved variable as working for one service, many services, or All
-  weight: 10
+rubric: []

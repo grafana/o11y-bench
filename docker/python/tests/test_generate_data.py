@@ -1,8 +1,23 @@
 import json
+import random
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from o11y_stack import generate_data
+
+
+@contextmanager
+def seeded(seed: int) -> Iterator[None]:
+    """Seed the generator's global RNG for one block, then put the caller's state back."""
+    state = random.getstate()
+    random.seed(seed)
+    try:
+        yield
+    finally:
+        random.setstate(state)
 
 
 def test_incident_config_scopes_incidents_to_the_right_services():
@@ -20,6 +35,30 @@ def test_incident_config_scopes_incidents_to_the_right_services():
     assert incidents.get_retry_queue_depth(error_mid, "payment-service") > 0
     assert incidents.get_retry_queue_depth(error_mid, "order-service") > 0
     assert incidents.get_retry_queue_depth(error_mid, "user-service") == 0
+
+
+def test_a_slow_checkout_keeps_its_time_on_order_service_not_the_payment_call():
+    # During the order-service latency incident the handler is slow; the call it makes is not.
+    with seeded(1):
+        traces = [
+            generate_data.generate_request_trace(
+                trace_id="b" * 32,
+                endpoint={"method": "POST", "path": "/api/orders", "service": "order-service"},
+                ts=datetime(2026, 3, 30, 12, 0, tzinfo=UTC),
+                is_error=False,
+                base_duration_ms=8000,
+            )
+            for _ in range(20)
+        ]
+
+    def duration_ms(span: dict) -> float:
+        return (int(span["endTimeUnixNano"]) - int(span["startTimeUnixNano"])) / 1e6
+
+    calls = [s for spans in traces for s in spans if s["name"].startswith("call ")]
+    handlers = [s for spans in traces for s in spans if s["name"] == "handle POST /api/orders"]
+    assert calls, "no dependency calls generated"
+    assert max(duration_ms(s) for s in calls) <= 25
+    assert min(duration_ms(s) for s in handlers) > 5000
 
 
 def test_generate_request_trace_preserves_causal_chain_and_cache_child_span():
@@ -139,30 +178,119 @@ def test_service_metrics_accumulates_counts_and_histogram_buckets():
     assert metrics.bucket_counts[-1] == 1
 
 
-def test_data_end_time_honors_explicit_override(monkeypatch: pytest.MonkeyPatch):
+def test_data_end_time_is_the_override_floored_to_the_minute(monkeypatch: pytest.MonkeyPatch):
+    # Whole minutes, so subquery steps meet the same samples whatever the clock's seconds.
     monkeypatch.setenv("O11Y_SCENARIO_TIME_ISO", "2026-04-04T10:05:14Z")
 
-    assert generate_data.data_end_time_utc() == datetime(2026, 4, 4, 10, 5, 14, tzinfo=UTC)
+    assert generate_data.data_end_time_utc() == datetime(2026, 4, 4, 10, 5, tzinfo=UTC)
 
 
-def test_wait_for_tempo_searchable_requires_trace_by_id_and_search(monkeypatch: pytest.MonkeyPatch):
+@pytest.fixture(scope="module")
+def generate(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Callable[[str], tuple[dict, list[dict]]]:
+    """`generate(clock)` runs the whole generator at that scenario time: (metrics, pushed logs).
+
+    Only the network and promtool are faked, and only for the duration of a run.
+    """
+    out_dir = tmp_path_factory.mktemp("generated")
+    runs: dict[str, tuple[dict, list[dict]]] = {}
+
+    def run(clock: str) -> tuple[dict, list[dict]]:
+        if clock in runs:
+            return runs[clock]
+        logs: list[dict] = []
+        with pytest.MonkeyPatch.context() as mp:
+            for name in ("wait_for_loki_complete", "wait_for_tempo_searchable"):
+                mp.setattr(generate_data, name, lambda *args, **kwargs: None)
+            mp.setattr(generate_data, "push_traces_batch", lambda spans: True)
+            mp.setattr(generate_data, "push_logs_batch", lambda batch: logs.extend(batch))
+            mp.setattr(
+                generate_data,
+                "open",
+                lambda path, *a, **kw: open(out_dir / Path(path).name, *a, **kw),
+                raising=False,
+            )
+            mp.setenv("O11Y_SCENARIO_TIME_ISO", clock)
+            with seeded(42):
+                metrics = generate_data.generate_all_data()
+        runs[clock] = ({name: vars(m) for name, m in metrics.items()}, logs)
+        return runs[clock]
+
+    return run
+
+
+WEEKDAY_NIGHT = "2026-10-19T23:01:50Z"
+SATURDAY_NOON = "2026-10-24T12:30:05Z"
+
+
+def test_generated_data_relative_to_the_clock_does_not_depend_on_the_clock(generate) -> None:
+    # A Monday-night job and a Saturday-noon regrade must generate the same telemetry, so the
+    # truths a regrade reads match what the agent saw.
+    weekday_metrics, weekday_logs = generate(WEEKDAY_NIGHT)
+    saturday_metrics, saturday_logs = generate(SATURDAY_NOON)
+
+    assert weekday_logs
+    assert saturday_metrics == weekday_metrics
+    assert len(saturday_logs) == len(weekday_logs)
+
+
+def _payloads(logs: list[dict]) -> list[tuple[int, dict]]:
+    return [(log["ts_ns"], json.loads(log["line"])) for log in logs]
+
+
+def test_each_rollout_is_logged_once(generate) -> None:
+    # A second identical line reads as a second deployment.
+    _, logs = generate(WEEKDAY_NIGHT)
+
+    rollouts = sorted(p["service"] for _, p in _payloads(logs) if p.get("event") == "deployment")
+
+    assert rollouts == ["order-service", "payment-service", "user-service"]
+
+
+def test_the_user_service_rollout_precedes_the_first_cache_refresh_warning(generate) -> None:
+    # The rollout is the cache incident's trigger.
+    _, logs = generate(WEEKDAY_NIGHT)
+    payloads = _payloads(logs)
+
+    rollout = min(
+        ts
+        for ts, p in payloads
+        if p.get("event") == "deployment" and p["service"] == "user-service"
+    )
+    first_warning = min(ts for ts, p in payloads if p.get("job_name") == "auth-cache-refresh")
+
+    assert rollout < first_warning
+
+
+@pytest.mark.parametrize("late", ["broad", "error", "metrics"])
+@pytest.mark.parametrize(("max_attempts", "ready"), [(2, False), (3, True)])
+def test_tempo_is_searchable_only_once_every_probe_answers(
+    monkeypatch: pytest.MonkeyPatch, late: str, max_attempts: int, ready: bool
+) -> None:
+    # Each probe answers from the first poll except `late`, which answers from the third.
     end_time = datetime(2026, 4, 19, 16, 0, tzinfo=UTC)
-    attempts = {"search": 0, "errors": 0}
+    polls_waited: list[None] = []
 
-    def fake_search(
-        query: str, start_sec: int, end_sec: int, *, limit: int = 20
-    ) -> tuple[list[dict], str]:
-        del start_sec, end_sec, limit
-        if not query:
-            attempts["search"] += 1
-            return ([{"traceID": "abc"}], "") if attempts["search"] >= 2 else ([], "")
-        attempts["errors"] += 1
-        return ([{"traceID": "def"}], "") if attempts["errors"] >= 2 else ([], "")
+    def answers(probe: str) -> list[dict]:
+        polls_needed = 2 if probe == late else 0
+        return [{"traceID": "abc", "value": 0.5}] if len(polls_waited) >= polls_needed else []
 
-    monkeypatch.setattr(generate_data, "fetch_tempo_search_traces", fake_search)
-    monkeypatch.setattr(generate_data.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        generate_data,
+        "fetch_tempo_search_traces",
+        lambda query, _start, _end, *, limit=20: (answers("error" if query else "broad"), ""),
+    )
+    monkeypatch.setattr(
+        generate_data, "fetch_tempo_metrics_series", lambda *_: (answers("metrics"), "")
+    )
+    monkeypatch.setattr(generate_data.time, "sleep", lambda _seconds: polls_waited.append(None))
 
-    generate_data.wait_for_tempo_searchable(end_time, max_attempts=3)
+    if ready:
+        generate_data.wait_for_tempo_searchable(end_time, max_attempts=max_attempts)
+    else:
+        with pytest.raises(RuntimeError):
+            generate_data.wait_for_tempo_searchable(end_time, max_attempts=max_attempts)
 
 
 def test_wait_for_tempo_searchable_raises_when_search_stays_empty(
@@ -175,7 +303,53 @@ def test_wait_for_tempo_searchable_raises_when_search_stays_empty(
         "fetch_tempo_search_traces",
         lambda _query, _start, _end, *, limit=20: ([], ""),
     )
+    monkeypatch.setattr(
+        generate_data, "fetch_tempo_metrics_series", lambda _query, _start, _end: ([], "")
+    )
     monkeypatch.setattr(generate_data.time, "sleep", lambda _seconds: None)
 
     with pytest.raises(RuntimeError, match="Tempo search never became ready"):
         generate_data.wait_for_tempo_searchable(end_time, max_attempts=2)
+
+
+def test_wait_for_tempo_searchable_waits_until_every_trace_is_indexed(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # Tempo has no flush call: search answers from the first block while later ones are still
+    # being cut, so a partial dataset must not count as ready.
+    end_time = datetime(2026, 4, 19, 16, 0, tzinfo=UTC)
+    indexed = iter([10, 40, 50])
+
+    monkeypatch.setattr(
+        generate_data,
+        "fetch_tempo_search_traces",
+        lambda _query, _start, _end, *, limit=20: ([{"traceID": "abc"}], ""),
+    )
+    monkeypatch.setattr(
+        generate_data, "fetch_tempo_metrics_series", lambda _q, _start, _end: ([{"value": 1}], "")
+    )
+    monkeypatch.setattr(
+        generate_data, "fetch_tempo_root_span_count", lambda _start, _end: (next(indexed), "")
+    )
+    monkeypatch.setattr(generate_data.time, "sleep", lambda _seconds: None)
+
+    generate_data.wait_for_tempo_searchable(end_time, max_attempts=3, expected_traces=50)
+
+    with pytest.raises(RuntimeError, match="never became ready"):
+        monkeypatch.setattr(generate_data, "fetch_tempo_root_span_count", lambda _s, _e: (49, ""))
+        generate_data.wait_for_tempo_searchable(end_time, max_attempts=2, expected_traces=50)
+
+
+def test_wait_for_loki_complete_waits_for_every_line(monkeypatch: pytest.MonkeyPatch):
+    end_time = datetime(2026, 4, 19, 16, 0, tzinfo=UTC)
+    counts = iter([0, 40, 50])
+
+    monkeypatch.setattr(generate_data.urllib.request, "urlopen", lambda *_a, **_kw: None)
+    monkeypatch.setattr(generate_data, "fetch_loki_line_count", lambda _end: (next(counts), ""))
+    monkeypatch.setattr(generate_data.time, "sleep", lambda _seconds: None)
+
+    generate_data.wait_for_loki_complete(end_time, 50, max_attempts=3)
+
+    monkeypatch.setattr(generate_data, "fetch_loki_line_count", lambda _end: (49, ""))
+    with pytest.raises(RuntimeError, match="Loki never became ready"):
+        generate_data.wait_for_loki_complete(end_time, 50, max_attempts=2)

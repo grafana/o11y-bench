@@ -1,9 +1,14 @@
 from unittest.mock import patch
 
+import pytest
+
 from grading import env_context
 from grading.checks import run_checks
 from grading.env_context import VerifierContext
+from grading.helpers import MAX_CITED_TRACES
 from grading.models import CheckItem, Message, ToolCall, ToolResult, Transcript
+
+from .helpers import answer_transcript, fake_tempo
 
 
 def _tool_grounded_trace_response() -> Transcript:
@@ -122,6 +127,42 @@ def test_run_checks_dispatches_trace_grounding() -> None:
 
     assert scores["trace grounding"] == 1.0
     assert "grounded in tool results" in explanations["trace grounding"]
+
+
+TRACE_ID = "0595f4e097fcacc5724644e76d76ad60"
+FAILING_ORDER = '{ span.http.route = "/api/orders" && status = error }'
+
+
+@pytest.mark.parametrize(
+    ("answer", "stored", "matching", "score", "why"),
+    [
+        (f"Failing trace {TRACE_ID}: order-service 500.", {TRACE_ID}, {TRACE_ID}, 1.0, "matches"),
+        (f"Trace {TRACE_ID} looks fine.", {TRACE_ID}, set(), 0.0, "does not match"),
+        (f"Trace {TRACE_ID} is the one.", set(), set(), 0.0, "not in Tempo"),
+        (f"Trace {TRACE_ID[:16]} is the one.", {TRACE_ID}, {TRACE_ID}, 0.0, "no full trace ID"),
+        # As Tempo prints it, leading zero dropped.
+        (f"Trace {TRACE_ID[1:]} failed.", {TRACE_ID}, {TRACE_ID}, 1.0, "matches"),
+    ],
+)
+def test_cited_trace_is_read_back_from_tempo_and_must_match(
+    answer: str, stored: set[str], matching: set[str], score: float, why: str
+) -> None:
+    check = CheckItem.model_validate(
+        {
+            "name": "cited trace",
+            "weight": 1.0,
+            "type": "state",
+            "params": {"mode": "cited_trace", "match": FAILING_ORDER},
+        }
+    )
+    tempo = fake_tempo(stored, matching)
+    with patch("grading.env_context.http_get_json", side_effect=tempo):
+        scores, explanations = run_checks(
+            [check], answer_transcript(answer), VerifierContext(tempo_url="http://tempo")
+        )
+
+    assert scores["cited trace"] == score
+    assert why in explanations["cited trace"]
 
 
 def test_run_checks_trace_grounding_accepts_non_tempo_tool_source() -> None:
@@ -461,3 +502,23 @@ def test_state_dashboard_execute_case_supports_all_binding() -> None:
 
     assert scores["dashboard state"] == 1.0
     assert "satisfies" in explanations["dashboard state"].lower()
+
+
+def test_a_trace_cited_past_the_limit_is_not_the_example() -> None:
+    ids = [f"{i:032x}" for i in range(1, MAX_CITED_TRACES + 2)]
+    check = CheckItem.model_validate(
+        {
+            "name": "cited trace",
+            "weight": 1.0,
+            "type": "state",
+            "params": {"mode": "cited_trace", "match": FAILING_ORDER},
+        }
+    )
+    # Only the last ID cited is a failing trace; the example comes from the first few IDs.
+    tempo = fake_tempo(set(ids), {ids[-1]})
+    with patch("grading.env_context.http_get_json", side_effect=tempo):
+        scores, _ = run_checks(
+            [check], answer_transcript("Traces " + ", ".join(ids)), VerifierContext(tempo_url="t")
+        )
+
+    assert scores["cited trace"] == 0.0

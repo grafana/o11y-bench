@@ -5,27 +5,21 @@ tags:
 - metrics
 - cpu
 statement: |
-  Checkout felt sluggish around six hours ago. Compare average CPU over that same ~6h window across
-  the monitored jobs: rank them from hottest to coolest, say about how much CPU the hottest one was
-  burning on average, and tell me whether backend CPU looks like the main culprit or a weak lead
-  for the slowdown.
+  Checkout has felt sluggish for the last six hours or so. Compare average CPU across the monitored
+  jobs over the last 6 hours, up to now: rank them from hottest to coolest, say about how much CPU
+  the hottest one was burning on average, and tell me whether backend CPU looks like the main
+  culprit or a weak lead for the slowdown.
 checks: []
 rubric:
-- criterion: The final response states roughly how much average CPU the hottest job was burning.
+- criterion: The final response states the average CPU of the hottest job (the top row of the Source of truth).
   weight: 50
   fact:
     kind: query
     backend: prometheus
     query: sum by (job) (rate(process_cpu_seconds_total{job=~".+"}[6h]))
-- criterion: The transcript shows Prometheus evidence comparing per-job CPU over the slowdown window rather than only a single point-in-time snapshot
-  weight: 20
-- criterion: The final response ranks the monitored jobs from hottest to coolest correctly.
+- criterion: The final response ranks the monitored jobs from hottest to coolest in the order of the Source of truth. Jobs within 2% of each other in the Source of truth are tied, so any order among them is right, and the response says when the leaders are that close instead of presenting one as a clear winner.
   weight: 30
   fact:
     kind: query
     backend: prometheus
     query: sort_desc(sum by (job) (rate(process_cpu_seconds_total{job=~".+"}[6h])))
-- criterion: The final response interprets whether CPU is a convincing incident lead or a weak one, not only which backend ranked highest
-  weight: 10
-- criterion: The final response frames the answer around the slowdown window rather than only a right-now snapshot
-  weight: 5

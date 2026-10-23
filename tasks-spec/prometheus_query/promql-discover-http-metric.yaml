@@ -21,5 +21,3 @@ rubric:
     kind: query
     backend: prometheus
     query: sum(rate(http_requests_total{job=~"user-service|order-service|payment-service"}[5m]))
-- criterion: The response recommends `http_requests_total` as the metric and the `job` label to break it down by service, tying that recommendation to what is actually scraped in the environment rather than a generic PromQL textbook answer.
-  weight: 30

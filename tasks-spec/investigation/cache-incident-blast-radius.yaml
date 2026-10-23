@@ -13,15 +13,24 @@ statement: |
   warning logs and the rollout evidence around that incident, not just a guess.
 checks: []
 rubric:
-- criterion: Non-user auth-cache-refresh warning count stays at zero over the last 12h
+- criterion: The final response states that order-service and payment-service logged no auth-cache-refresh
+    warnings in the window, consistent with the Source of truth.
   weight: 25
   fact:
     kind: query
     backend: loki
-    query: sum(count_over_time({job=~"order-service|payment-service",level="warn"} | json | __error__="" | job_name="auth-cache-refresh" [12h]))
-- criterion: The final response identifies the incident as isolated to `user-service` rather than a broad backend warning pattern
+    allow_empty: true
+    query: sum(count_over_time({job=~"order-service|payment-service",level="warn"} | json | __error__=""
+      | job_name="auth-cache-refresh" [12h]))
+- criterion: 'The final response identifies the cache-refresh warning pattern as isolated to `user-service`
+    rather than a broad backend pattern: it is the only job with auth-cache-refresh warnings in the Source
+    of truth'
   weight: 40
-- criterion: The final response cites the `user-service v2.5.0` rollout as the relevant deployment evidence and does not claim an order-service or payment-service rollout immediately preceded this cache incident
+  fact:
+    kind: query
+    backend: loki
+    query: sum by (job) (count_over_time({level="warn"} | json | __error__="" | job_name="auth-cache-refresh"
+      [12h]))
+- criterion: The final response cites the `user-service v2.5.0` rollout as the relevant deployment evidence
+    and does not claim an order-service or payment-service rollout immediately preceded this cache incident
   weight: 15
-- criterion: The response frames the issue as a limited cache-refresh blast radius rather than a fleet-wide backend incident
-  weight: 20
