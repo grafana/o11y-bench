@@ -164,6 +164,14 @@ class O11yBenchAgent(BaseAgent):
             if val:
                 env[key] = val
 
+        fireworks_api_key = os.environ.get("FIREWORKS_AI_API_KEY") or os.environ.get(
+            "FIREWORKS_API_KEY"
+        )
+        if fireworks_api_key:
+            # Fireworks documents FIREWORKS_API_KEY while LiteLLM uses the _AI_ name.
+            env["FIREWORKS_API_KEY"] = fireworks_api_key
+            env["FIREWORKS_AI_API_KEY"] = fireworks_api_key
+
         gemini_api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         if gemini_api_key:
             env["GEMINI_API_KEY"] = gemini_api_key

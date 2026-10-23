@@ -145,6 +145,27 @@ async def test_vertex_setup_rejects_missing_explicit_credentials(
 
 
 @pytest.mark.anyio
+async def test_run_maps_fireworks_api_key_to_litellm_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FIREWORKS_API_KEY", "fireworks-test-key")
+    monkeypatch.delenv("FIREWORKS_AI_API_KEY", raising=False)
+    agent = O11yBenchAgent(
+        logs_dir=tmp_path,
+        model_name="fireworks_ai/accounts/example/deployments/test",
+    )
+    env: Any = MockEnvironment(MockExecResult(return_code=1))
+
+    with pytest.raises(NonZeroAgentExitCodeError):
+        await agent.run("do the thing", env, AgentContext())
+
+    _, call_env = env.exec_calls[0]
+    assert call_env["FIREWORKS_API_KEY"] == "fireworks-test-key"
+    assert call_env["FIREWORKS_AI_API_KEY"] == "fireworks-test-key"
+
+
+@pytest.mark.anyio
 async def test_run_passes_explicit_temperature_agent_kwarg(tmp_path: Path) -> None:
     agent = O11yBenchAgent(
         logs_dir=tmp_path,

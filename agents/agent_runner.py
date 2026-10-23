@@ -239,7 +239,7 @@ def effort_off_settings(model: str) -> dict[str, Any]:
         return {"thinking": {"type": "between_tools"}}
     if re.search(r"claude-(opus|fable)-5|gpt-6\.1|gemini-4-argon", model):
         raise ValueError(f"{model} cannot turn thinking off; use --reasoning-effort low or default")
-    if re.search(r"gpt-(5\.[4-9]|6)", model):
+    if re.search(r"gpt-(5\.[4-9]|6)", model) or model.startswith("fireworks_ai/"):
         return {"reasoning_effort": "none"}
     return {}
 
@@ -264,11 +264,17 @@ def build_litellm_kwargs(
         litellm_kwargs.update(effort_off_settings(model))
     elif reasoning_effort != "default":  # "default" sends nothing: the provider decides
         litellm_kwargs["reasoning_effort"] = reasoning_effort
+    if model.startswith("fireworks_ai/") and "reasoning_effort" in litellm_kwargs:
+        # Account deployments are absent from LiteLLM's static capability map. Without
+        # this override, drop_params silently removes the requested reasoning level.
+        litellm_kwargs["allowed_openai_params"] = ["reasoning_effort"]
     if (
-        reasoning_effort in ("off", "default")
-        and temperature is not None
+        temperature is not None
+        and (reasoning_effort in ("off", "default") or model.startswith("fireworks_ai/"))
         and "claude-opus-4-7" not in model
     ):
+        # Most reasoning APIs reject sampling controls, but Fireworks accepts temperature
+        # alongside reasoning_effort. This lets Fireworks runs override its default of 1.0.
         litellm_kwargs["temperature"] = float(temperature)
 
     return litellm_kwargs
