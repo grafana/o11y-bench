@@ -328,9 +328,10 @@ mise run bench:job -- \
   --reasoning-effort low
 ```
 
-The runner forwards Fireworks credentials under both the Fireworks and LiteLLM environment-variable
-names. Explicit reasoning levels are also preserved for account deployments, which are not present
-in LiteLLM's static model capability map.
+The default LiteLLM-backed runner forwards Fireworks credentials under both the Fireworks and
+LiteLLM environment-variable names. Explicit reasoning levels are also preserved for account
+deployments, which are not present in LiteLLM's static model capability map. This provider-specific
+handling does not apply to the alternate LangChain example agent.
 
 ### Dry Run
 

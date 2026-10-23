@@ -112,7 +112,7 @@ async def test_run_maps_fireworks_api_key_to_litellm_name(
     monkeypatch.delenv("FIREWORKS_AI_API_KEY", raising=False)
     agent = O11yBenchAgent(
         logs_dir=tmp_path,
-        model_name="fireworks_ai/accounts/grafana/deployments/test",
+        model_name="fireworks_ai/accounts/example/deployments/test",
     )
     env: Any = MockEnvironment(MockExecResult(return_code=1))
 
