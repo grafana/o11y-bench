@@ -73,12 +73,8 @@ def test_build_litellm_kwargs_omits_temperature_when_unset() -> None:
 
 
 def test_cache_control_injection_is_only_enabled_for_anthropic() -> None:
-    anthropic = agent_runner.build_litellm_kwargs(
-        "anthropic/claude-sonnet-4-6", [], "off", None
-    )
-    vertex = agent_runner.build_litellm_kwargs(
-        "vertex_ai/gemini-4-argon", [], "low", None
-    )
+    anthropic = agent_runner.build_litellm_kwargs("anthropic/claude-sonnet-4-6", [], "off", None)
+    vertex = agent_runner.build_litellm_kwargs("vertex_ai/gemini-4-argon", [], "low", None)
 
     assert "cache_control_injection_points" in anthropic
     assert "cache_control_injection_points" not in vertex
