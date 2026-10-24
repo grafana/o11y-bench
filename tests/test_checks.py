@@ -6,9 +6,38 @@ from grading import env_context
 from grading.checks import run_checks
 from grading.env_context import VerifierContext
 from grading.helpers import MAX_CITED_TRACES
-from grading.models import CheckItem, Message, Transcript
+from grading.models import CheckItem, Message, ToolCall, ToolResult, Transcript
 
 from .helpers import answer_transcript, fake_tempo
+
+
+def _tool_grounded_trace_response() -> Transcript:
+    return Transcript(
+        messages=[
+            Message(
+                role="assistant",
+                tool_calls=[
+                    ToolCall(id="tempo-1", name="tempo_search", arguments={"q": "ignored"})
+                ],
+            ),
+            Message(
+                role="tool",
+                tool_results=[
+                    ToolResult(
+                        tool_call_id="tempo-1",
+                        content='{"traces":[{"traceID":"2f0d253c538f68595d959a8a39d7a6a0"}]}',
+                    )
+                ],
+            ),
+            Message(
+                role="assistant",
+                content=(
+                    "A representative slow trace is 2f0d253c538f6859 and it points to "
+                    "order-service."
+                ),
+            ),
+        ]
+    )
 
 
 def test_load_verifier_context_defaults_to_localhost(monkeypatch) -> None:
@@ -80,6 +109,26 @@ def test_fetch_tempo_attribute_values_normalizes_v2_response_objects() -> None:
     assert values == ["api-gateway", "order-service"]
 
 
+def test_run_checks_dispatches_trace_grounding() -> None:
+    scores, explanations = run_checks(
+        [
+            CheckItem.model_validate(
+                {
+                    "name": "trace grounding",
+                    "weight": 1.0,
+                    "type": "grounding",
+                    "params": {"mode": "trace_id", "prefix_min_chars": 8},
+                }
+            )
+        ],
+        _tool_grounded_trace_response(),
+        VerifierContext(tempo_url="http://tempo"),
+    )
+
+    assert scores["trace grounding"] == 1.0
+    assert "grounded in tool results" in explanations["trace grounding"]
+
+
 TRACE_ID = "0595f4e097fcacc5724644e76d76ad60"
 FAILING_ORDER = '{ span.http.route = "/api/orders" && status = error }'
 
@@ -114,6 +163,98 @@ def test_cited_trace_is_read_back_from_tempo_and_must_match(
 
     assert scores["cited trace"] == score
     assert why in explanations["cited trace"]
+
+
+def test_run_checks_trace_grounding_accepts_non_tempo_tool_source() -> None:
+    transcript = Transcript(
+        messages=[
+            Message(
+                role="assistant",
+                tool_calls=[
+                    ToolCall(id="loki-1", name="query_loki_logs", arguments={"query": "ignored"})
+                ],
+            ),
+            Message(
+                role="tool",
+                tool_results=[
+                    ToolResult(
+                        tool_call_id="loki-1",
+                        content='{"traceID":"2f0d253c538f68595d959a8a39d7a6a0","level":"error"}',
+                    )
+                ],
+            ),
+            Message(
+                role="assistant",
+                content="A representative trace from the logs is 2f0d253c538f6859.",
+            ),
+        ]
+    )
+
+    scores, explanations = run_checks(
+        [
+            CheckItem.model_validate(
+                {
+                    "name": "trace grounding",
+                    "weight": 1.0,
+                    "type": "grounding",
+                    "params": {"mode": "trace_id", "prefix_min_chars": 8},
+                }
+            )
+        ],
+        transcript,
+        VerifierContext(),
+    )
+
+    assert scores["trace grounding"] == 1.0
+    assert "grounded in tool results" in explanations["trace grounding"]
+
+
+def test_run_checks_trace_grounding_matches_snake_case_trace_id_key() -> None:
+    transcript = Transcript(
+        messages=[
+            Message(
+                role="assistant",
+                tool_calls=[
+                    ToolCall(id="loki-1", name="query_loki_logs", arguments={"query": "ignored"})
+                ],
+            ),
+            Message(
+                role="tool",
+                tool_results=[
+                    ToolResult(
+                        tool_call_id="loki-1",
+                        content=(
+                            '{"level":"error",'
+                            '"trace_id":"2f0d253c538f68595d959a8a39d7a6a0",'
+                            '"message":"upstream service error"}'
+                        ),
+                    )
+                ],
+            ),
+            Message(
+                role="assistant",
+                content="The error trace is 2f0d253c538f6859.",
+            ),
+        ]
+    )
+
+    scores, explanations = run_checks(
+        [
+            CheckItem.model_validate(
+                {
+                    "name": "trace grounding",
+                    "weight": 1.0,
+                    "type": "grounding",
+                    "params": {"mode": "trace_id", "prefix_min_chars": 8},
+                }
+            )
+        ],
+        transcript,
+        VerifierContext(),
+    )
+
+    assert scores["trace grounding"] == 1.0
+    assert "grounded in tool results" in explanations["trace grounding"]
 
 
 def test_state_datasource_detail_requires_configured_detail() -> None:

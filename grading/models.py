@@ -237,6 +237,12 @@ class DashboardItemExpectation(SpecModel):
         raise ValueError("Dashboard item expectations must include at least one constraint.")
 
 
+class TraceIdGroundingParams(SpecModel):
+    mode: Literal["trace_id"]
+    prefix_min_chars: int = 8
+    assistant_scope: Literal["final", "all"] = "final"
+
+
 class CitedTraceParams(SpecModel):
     """A trace the final response cites by its full ID, read back from Tempo: it must exist
     there and match `match`, a TraceQL spanset filter such as
@@ -315,7 +321,8 @@ class TempoTraceServiceInventoryStateParams(SpecModel):
 
 
 type CheckParams = Annotated[
-    CitedTraceParams
+    TraceIdGroundingParams
+    | CitedTraceParams
     | DashboardStateParams
     | DatasourceInventoryStateParams
     | DatasourceDetailStateParams
@@ -333,9 +340,17 @@ class RubricItem(SpecModel):
 class CheckItem(SpecModel):
     name: str
     weight: float = Field(gt=0)
-    # Every check reads state back from the stack after the agent finished.
-    type: Literal["state"]
+    type: Literal["grounding", "state"]
     params: CheckParams
+
+    @model_validator(mode="after")
+    def validate_type_matches_params(self) -> Self:
+        expected_type = check_type_for_params(self.params)
+        if self.type != expected_type:
+            raise ValueError(
+                f"check type {self.type!r} does not match params mode {self.params.mode!r}"
+            )
+        return self
 
 
 @dataclass(frozen=True)
@@ -560,3 +575,18 @@ def format_tool_call(call: ToolCall) -> str:
 
 def collapse_whitespace(text: str) -> str:
     return " ".join(text.split())
+
+
+def check_type_for_params(params: CheckParams) -> Literal["grounding", "state"]:
+    match params:
+        case TraceIdGroundingParams():
+            return "grounding"
+        case CitedTraceParams():
+            return "state"
+        case (
+            DashboardStateParams()
+            | DatasourceInventoryStateParams()
+            | DatasourceDetailStateParams()
+            | TempoTraceServiceInventoryStateParams()
+        ):
+            return "state"

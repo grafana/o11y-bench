@@ -7,7 +7,14 @@ from grading.env_context import (
     find_trace_examples,
     resolve_grafana_datasource,
 )
-from grading.helpers import cited_trace_ids, require_stack_url
+from grading.helpers import (
+    assistant_scope_note,
+    assistant_text_blobs,
+    cited_trace_ids,
+    require_stack_url,
+    response_cites_trace_id_prefix,
+    trace_ids_from_tool_content,
+)
 from grading.models import (
     CheckItem,
     CitedTraceParams,
@@ -15,6 +22,7 @@ from grading.models import (
     DatasourceDetailStateParams,
     DatasourceInventoryStateParams,
     TempoTraceServiceInventoryStateParams,
+    TraceIdGroundingParams,
     Transcript,
 )
 
@@ -41,6 +49,8 @@ def run_check(
     ctx: VerifierContext | None,
 ) -> tuple[float, str]:
     match check.params:
+        case TraceIdGroundingParams():
+            return validate_trace_id_grounding(check.params, transcript)
         case CitedTraceParams():
             return validate_cited_trace(check.params, transcript, ctx)
         case DashboardStateParams():
@@ -53,6 +63,38 @@ def run_check(
             return validate_tempo_trace_service_inventory(check.params, ctx)
         case _:
             return 0.0, f"Unsupported check params mode {check.params.mode!r}."
+
+
+def validate_trace_id_grounding(
+    params: TraceIdGroundingParams,
+    transcript: Transcript,
+) -> tuple[float, str]:
+    found_ids: set[str] = set()
+    for msg in transcript.messages:
+        if msg.role != "tool" or not msg.tool_results:
+            continue
+        for tool_result in msg.tool_results:
+            found_ids.update(trace_ids_from_tool_content(tool_result.content))
+
+    if not found_ids:
+        return 0.0, "No hex trace IDs found in any tool results."
+
+    text_blobs = assistant_text_blobs(transcript, params.assistant_scope)
+    if not text_blobs:
+        return 0.0, "No agent response found."
+
+    matched, prefix = response_cites_trace_id_prefix(
+        text_blobs,
+        found_ids,
+        params.prefix_min_chars,
+    )
+    if matched and prefix:
+        scope_note = assistant_scope_note(params.assistant_scope)
+        return (
+            1.0,
+            f"Response cites trace ID prefix grounded in tool results ({prefix}, {scope_note}).",
+        )
+    return 0.0, "Response does not cite any trace ID prefix that appeared in tool results."
 
 
 def validate_cited_trace(
