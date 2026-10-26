@@ -23,7 +23,7 @@ runs:
         save-cache: ${{ inputs.save-cache }}
 
     - name: Install mise
-      uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
       if: ${{ inputs.install-mise == 'true' }}
       with:
         cache: false
