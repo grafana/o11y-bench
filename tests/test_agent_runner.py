@@ -72,6 +72,14 @@ def test_build_litellm_kwargs_omits_temperature_when_unset() -> None:
     assert "temperature" not in result
 
 
+def test_cache_control_injection_is_only_enabled_for_anthropic() -> None:
+    anthropic = agent_runner.build_litellm_kwargs("anthropic/claude-sonnet-4-6", [], "off", None)
+    vertex = agent_runner.build_litellm_kwargs("vertex_ai/gemini-4-argon", [], "low", None)
+
+    assert "cache_control_injection_points" in anthropic
+    assert "cache_control_injection_points" not in vertex
+
+
 def test_build_litellm_kwargs_parses_explicit_zero_temperature() -> None:
     result = agent_runner.build_litellm_kwargs("openai/gpt-5.4-mini", [], "off", "0")
 
@@ -131,7 +139,13 @@ def test_off_turns_thinking_off_the_way_each_model_accepts(
 
 
 @pytest.mark.parametrize(
-    "model", ["anthropic/claude-opus-5-5", "anthropic/claude-fable-5-1", "openai/gpt-6.1-sol"]
+    "model",
+    [
+        "anthropic/claude-opus-5-5",
+        "anthropic/claude-fable-5-1",
+        "openai/gpt-6.1-sol",
+        "vertex_ai/gemini-4-argon",
+    ],
 )
 def test_off_fails_for_models_that_cannot_turn_thinking_off(model: str) -> None:
     with pytest.raises(ValueError, match="cannot turn thinking off"):
