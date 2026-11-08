@@ -474,6 +474,24 @@ Use `mise run agento11y:suite -- <options>` to publish the standard multi-model 
 state is retained in each job directory, so resume and retry operations preserve stable experiment,
 trial, and attempt identities instead of duplicating completed results.
 
+Transient publishing failures (HTTP 429/5xx, connection errors, and timeouts) retry with
+exponential backoff and jitter while the benchmark runs. Scores are uploaded in one batch per
+trial. At shutdown, the publisher retries catch-up and finalization up to three times beyond
+the SDK's own request retries; a recovered error does not mark the experiment failed.
+
+If catch-up still encounters a transient outage, the command exits nonzero but leaves the
+experiment open for recovery. Re-run the original `job` command with the same `--job-name`
+and `--agento11y-publish` to export saved results without rerunning completed model trials.
+The checkpoint retains the benchmark outcome so export-only recovery cannot turn a failed
+benchmark into a successful experiment. Permanent publishing errors still fail the experiment.
+This does not reopen experiments already finalized as failed by older versions.
+
+To run the publisher's offline SDK compatibility tests along with the normal test suite:
+
+```bash
+uv run --extra agento11y pytest
+```
+
 ## Reports And Artifacts
 
 Single-job report:

@@ -97,8 +97,8 @@ jobs:
       - name: Set up environment
         uses: ./.github/actions/setup-env
 
-      - name: Run tests
-        run: mise run test
+      - name: Run tests (including offline Agent Observability SDK compatibility)
+        run: uv run --locked --extra agento11y pytest
 
   cli-smoke:
     name: CLI Smoke
