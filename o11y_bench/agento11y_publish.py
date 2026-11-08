@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
+import random
 import re
 import threading
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
 
 import yaml
 
@@ -26,6 +31,40 @@ from reporting.report_data import (
 from .agento11y_suite import DEFAULT_SUITE_ID
 
 _STATE_FILE = ".agento11y-publish.json"
+_FINAL_PUBLISH_ATTEMPTS = 3
+_RETRY_INITIAL_SECONDS = 5.0
+_RETRY_MAX_SECONDS = 60.0
+_LOG = logging.getLogger(__name__)
+
+
+def _is_retryable_publish_error(error: BaseException) -> bool:
+    """Inspect SDK exception causes, not error-message text or all SDK errors."""
+    cause: BaseException | None = error
+    while cause is not None:
+        if isinstance(cause, HTTPError):
+            return cause.code == 429 or 500 <= cause.code < 600
+        if isinstance(cause, (URLError, TimeoutError, ConnectionError)):
+            return True
+        cause = cause.__cause__
+    return False
+
+
+def _retry_delay(attempt: int) -> float:
+    ceiling = min(_RETRY_MAX_SECONDS, _RETRY_INITIAL_SECONDS * 2 ** min(attempt, 6))
+    return random.uniform(ceiling / 2, ceiling)
+
+
+def _retry_publish(operation: Callable[[], Any]) -> Any:
+    for attempt in range(_FINAL_PUBLISH_ATTEMPTS):
+        try:
+            return operation()
+        except Exception as exc:
+            if not _is_retryable_publish_error(exc) or attempt == _FINAL_PUBLISH_ATTEMPTS - 1:
+                raise
+            delay = _retry_delay(attempt)
+            _LOG.warning("Agent Observability publishing will retry in %.1fs: %s", delay, exc)
+            time.sleep(delay)
+    raise AssertionError("unreachable")
 
 
 @dataclass(slots=True)
@@ -60,6 +99,14 @@ class Agento11yPublishResult:
     trial_count: int
     score_count: int
     url: str
+
+
+@dataclass(slots=True)
+class _PendingTrial:
+    trial: Any
+    score_count: int
+    scores_recorded: bool = False
+    artifacts: set[str] = field(default_factory=set)
 
 
 class Agento11yLivePublisher:
@@ -98,6 +145,9 @@ class Agento11yLivePublisher:
         self._thread: threading.Thread | None = None
         self._scan_lock = threading.Lock()
         self._error: Exception | None = None
+        self._pending_trials: dict[str, _PendingTrial] = {}
+        self._benchmark_succeeded: bool | None = None
+        self._benchmark_error = ""
         self.last_result: Agento11yPublishResult | None = None
         self._load_state()
 
@@ -120,41 +170,66 @@ class Agento11yLivePublisher:
     def finish(self, *, succeeded: bool, error: str = "") -> Agento11yPublishResult:
         self._stop.set()
         if self._thread is not None:
-            self._thread.join(timeout=max(5.0, self.poll_interval_seconds * 3))
+            # The worker can still be inside an SDK request. Do not race it when
+            # inspecting its last error or finalizing the experiment.
+            self._thread.join()
 
+        self._benchmark_succeeded = succeeded
+        self._benchmark_error = error
         publish_error = self._error
         try:
-            self.scan_once()
+            self._save_state()
+            if publish_error is None or _is_retryable_publish_error(publish_error):
+                _retry_publish(self.scan_once)
+                publish_error = None
         except Exception as exc:
-            publish_error = publish_error or exc
+            publish_error = exc
+        self._error = publish_error
 
-        failure: RuntimeError | None = None
-        if publish_error is not None:
-            failure = RuntimeError(f"Agent Observability live publishing failed: {publish_error}")
-        elif not succeeded:
-            failure = RuntimeError(error or "Harbor benchmark failed")
-
-        result_url = self.url
-        if self._experiment is not None:
-            if failure is None:
-                self._experiment.__exit__(None, None, None)
-            else:
-                self._experiment.__exit__(RuntimeError, failure, None)
         self.last_result = Agento11yPublishResult(
             experiment_id=self.experiment_id,
             trial_count=self._trial_count,
             score_count=self._score_count,
-            url=result_url,
+            url=self.url,
         )
+        experiment = self._experiment
+        if experiment is not None:
+            try:
+                if publish_error is None or not _is_retryable_publish_error(publish_error):
+                    failure = str(publish_error) if publish_error else error
+                    _retry_publish(
+                        lambda: experiment.finalize(
+                            "completed" if succeeded and publish_error is None else "failed",
+                            error=failure or ("Harbor benchmark failed" if not succeeded else ""),
+                        )
+                    )
+                else:
+                    _LOG.warning(
+                        "Agent Observability export is incomplete; leaving experiment %s "
+                        "open for recovery from %s",
+                        self.experiment_id,
+                        self.job_dir,
+                    )
+            except Exception as exc:
+                if publish_error is None:
+                    publish_error = exc
+                else:
+                    publish_error.add_note(f"Experiment finalization also failed: {exc}")
+            finally:
+                experiment.client.shutdown()
         if publish_error is not None:
-            assert failure is not None
-            raise failure from publish_error
+            self._error = publish_error
+            raise RuntimeError(
+                f"Agent Observability live publishing failed: {publish_error}"
+            ) from publish_error
         return self.last_result
 
     def publish_existing(self) -> Agento11yPublishResult:
         self._connect()
-        self.scan_once()
-        return self.finish(succeeded=True)
+        return self.finish(
+            succeeded=self._benchmark_succeeded is not False,
+            error=self._benchmark_error,
+        )
 
     def scan_once(self) -> None:
         if self._experiment is None or not self.job_dir.exists():
@@ -167,10 +242,12 @@ class Agento11yLivePublisher:
                 rewards = (result.get("verifier_result") or {}).get("rewards") or {}
                 if harbor_trial_id in self._exported or rewards.get("reward") is None:
                     continue
-                self._publish_trial(result, trial_dir, rewards)
+                score_count = self._publish_trial(result, trial_dir, rewards)
                 self._exported.add(harbor_trial_id)
                 self._trial_count += 1
+                self._score_count += score_count
                 self._save_state()
+                self._pending_trials.pop(harbor_trial_id, None)
 
     def _connect(self) -> None:
         if self._experiment is not None:
@@ -207,19 +284,31 @@ class Agento11yLivePublisher:
         self._suite_cases = {case.test_case_id: case for case in experiment.suite.cases}
 
     def _poll_loop(self) -> None:
-        while not self._stop.wait(self.poll_interval_seconds):
+        delay = self.poll_interval_seconds
+        failures = 0
+        while not self._stop.wait(delay):
             try:
                 self.scan_once()
             except Exception as exc:
                 self._error = exc
-                self._stop.set()
+                if not _is_retryable_publish_error(exc):
+                    _LOG.error("Agent Observability publishing stopped: %s", exc)
+                    self._stop.set()
+                    return
+                delay = _retry_delay(failures)
+                failures += 1
+                _LOG.warning("Agent Observability publishing will retry in %.1fs: %s", delay, exc)
+            else:
+                self._error = None
+                failures = 0
+                delay = self.poll_interval_seconds
 
     def _publish_trial(
         self,
         result: dict[str, Any],
         trial_dir: Path,
         rewards: dict[str, Any],
-    ) -> None:
+    ) -> int:
         assert self._sdk is not None
         assert self._experiments is not None
         assert self._experiment is not None
@@ -265,24 +354,37 @@ class Agento11yLivePublisher:
 
         version = str(result.get("task_checksum") or "unknown")
         score_specs = _score_specs(result, trial_dir, rewards, version)
-        with self._experiment.trial(
-            case,
-            attempt=attempt,
-            metadata={
-                "source": "o11y-bench",
-                "harbor_trial_id": trial_dir.name,
-                "reasoning_effort": trial_reasoning_effort(result),
-            },
-        ) as trial:
-            trial.bind_generation(generation_id, conversation_id=conversation_id)
-            trial.set_usage(
-                cost=cost if cost > 0 else None,
+        pending = self._pending_trials.get(trial_dir.name)
+        if pending is None:
+            trial = self._experiment.trial(
+                case,
+                attempt=attempt,
+                metadata={
+                    "source": "o11y-bench",
+                    "harbor_trial_id": trial_dir.name,
+                    "reasoning_effort": trial_reasoning_effort(result),
+                },
             )
+            pending = _PendingTrial(trial=trial, score_count=len(score_specs))
+            # Cache before entering: even trial creation can fail after the SDK
+            # has claimed this case/attempt. Reuse it instead of claiming twice.
+            self._pending_trials[trial_dir.name] = pending
+            trial.__enter__()
+        trial = pending.trial
+        if not pending.scores_recorded:
+            trial.bind_generation(generation_id, conversation_id=conversation_id)
+            trial.set_usage(cost=cost if cost > 0 else None)
             for score in score_specs:
                 trial.record_evaluation(score)
-                self._score_count += trial.flush()
-            for name, path in _artifact_paths(trial_dir):
+            pending.scores_recorded = True
+        trial.flush()
+        for name, path in _artifact_paths(trial_dir):
+            if name not in pending.artifacts:
                 trial.artifact(name, path=str(path))
+                pending.artifacts.add(name)
+        # A publishing outage is not a failed benchmark trial. Close only after
+        # its scores/artifacts are delivered; the SDK can retry a failed close.
+        trial.close()
 
         duration_ms = max(0, int(agent_seconds(result) * 1000))
         self._experiment.client.update_trial(
@@ -293,6 +395,7 @@ class Agento11yLivePublisher:
             conversation_id=conversation_id,
             cost=cost if cost > 0 else None,
         )
+        return pending.score_count
 
     def _attempt_for(self, task_id: str, harbor_trial_id: str) -> int:
         key = f"{task_id}\x1f{harbor_trial_id}"
@@ -323,6 +426,8 @@ class Agento11yLivePublisher:
         }
         self._trial_count = len(self._exported)
         self._score_count = int(payload.get("score_count") or 0)
+        self._benchmark_succeeded = payload.get("benchmark_succeeded")
+        self._benchmark_error = str(payload.get("benchmark_error") or "")
 
     def _save_state(self) -> None:
         if not self.job_dir.exists():
@@ -332,8 +437,13 @@ class Agento11yLivePublisher:
             "exported_trials": sorted(self._exported),
             "attempts": self._attempts,
             "score_count": self._score_count,
+            "benchmark_succeeded": self._benchmark_succeeded,
+            "benchmark_error": self._benchmark_error,
         }
-        (self.job_dir / _STATE_FILE).write_text(json.dumps(payload, indent=2) + "\n")
+        path = self.job_dir / _STATE_FILE
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        temporary.write_text(json.dumps(payload, indent=2) + "\n")
+        temporary.replace(path)
 
 
 def _score_specs(
